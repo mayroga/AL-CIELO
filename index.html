@@ -37,7 +37,7 @@ select{font-size:1.1rem;padding:14px;width:100%;border-radius:8px;border:1px sol
 .payment-error{background:#450a0a;color:#fecaca;border:1px solid #ef4444}
 .legal-notice{font-size:.85rem;color:#64748b;margin-top:25px;border-top:1px solid #334155;padding-top:15px;line-height:1.4;text-align:center}
 
-/* Círculo respiratorio estricto y dinámico */
+/* Círculo respiratorio dinámico y limpio */
 #breathing-circle-container {
 display: none;
 flex-direction: column;
@@ -109,7 +109,7 @@ animation: breatheAnim 6s infinite ease-in-out;
 <button id="audioControlBtn" class="btn btn-audio" onclick="reproducirVozHumana()">🗣️ Volver a escuchar en voz alta</button>
 </div>
 
-<!-- Contenedor estricto del círculo de respiración -->
+<!-- Contenedor dinámico del círculo de respiración -->
 <div id="breathing-circle-container">
 <span id="b-label" style="font-size:0.95rem;color:#94a3b8;font-weight:bold;">Guía de Respiración y Control de Oxígeno</span>
 <div class="b-circle" id="breathingCircleEl"></div>
@@ -302,13 +302,10 @@ ultimoTextoGenerado=data.session_content||"";
 box.innerText=ultimoTextoGenerado;
 audioBtn.style.display="block";
 
-// Análisis estricto previo a la voz: si el texto menciona respiración, inhalar, exhalar, aire, pulmones u oxígeno
-verificarYMostrarCirculoEstricto(ultimoTextoGenerado);
-
-reproducirVozHumana();
+reproducirVozHumanaYMonitorearRespiracion(ultimoTextoGenerado);
 }else if(response.status===403){
 box.innerText=lang==="es"
-?"Este dispositivo não tem uma assinatura ativa. Active la suscripción de $15.99 para iniciar la sesión completa."
+?"Este dispositivo no tiene una suscripción activa. Active la suscripción de $15.99 para iniciar la sesión completa."
 :lang==="pt"
 ?"Este dispositivo não possui uma assinatura ativa. Ative a assinatura de $15.99 para iniciar a sessão completa."
 :"This device does not have an active subscription. Activate the $15.99 subscription to start the full session.";
@@ -322,32 +319,13 @@ sessionBtn.disabled=false;
 }
 }
 
-function verificarYMostrarCirculoEstricto(texto){
-const textoMinus = texto.toLowerCase();
-// Palabras clave amplias de respiración, inhalación, exhalación, aire y pulmones en varios idiomas
-const palabrasClaveRespiracion = [
-"respir", "inhal", "exhal", "aire", "pulmón", "pulmon", "oxígen", "oxigen",
-"breath", "breathe", "inhale", "exhale", "air", "lungs", "oxygen",
-"respira", "inspire", "expire", "ar", "pulmões", "oxigênio"
-];
-
-const esRespiracion = palabrasClaveRespiracion.some(p => textoMinus.includes(p));
-const container = document.getElementById("breathing-circle-container");
-
-if(esRespiracion){
-container.style.display = "flex";
-} else {
-container.style.display = "none";
-}
-}
-
-function reproducirVozHumana(){
-if(!ultimoTextoGenerado)return;
+function reproducirVozHumanaYMonitorearRespiracion(texto){
+if(!texto)return;
 if(!("speechSynthesis" in window))return;
 
 window.speechSynthesis.cancel();
 
-const textoLimpio=ultimoTextoGenerado
+const textoLimpio=texto
 .replace(/[*#_\[\]{}()"`]/g,"")
 .replace(/[-–—]/g," ")
 .replace(/[\n\r]+/g,". ");
@@ -358,7 +336,51 @@ utterance.lang=lang==="es"?"es-ES":lang==="pt"?"pt-PT":"en-US";
 utterance.rate=.85;
 utterance.pitch=1;
 
+const container=document.getElementById("breathing-circle-container");
+
+// Palabras clave de respiración en sentido amplio
+const palabrasRespiracion = [
+"respir", "inhal", "exhal", "aire", "pulmón", "pulmon", "oxígen", "oxigen",
+"breath", "breathe", "inhale", "exhale", "air", "lungs", "oxygen",
+"respira", "inspire", "expire", "ar", "pulmões", "oxigênio"
+];
+
+const textoBajo = texto.toLowerCase();
+const contieneRespiracion = palabrasRespiracion.some(p => textoBajo.includes(p));
+
+// Sincronización exacta con la locución del entrenador
+utterance.onboundary = (event) => {
+if(event.name === "word" || event.charIndex !== undefined){
+const fragmentoActual = textoBajo.substring(event.charIndex, event.charIndex + 40);
+const enFaseRespiratoria = palabrasRespiracion.some(p => fragmentoActual.includes(p));
+
+if(enFaseRespiratoria && contieneRespiracion){
+container.style.display="flex";
+} else {
+// Si el entrenador pasa a otra parte del ejercicio de movilidad, el círculo se oculta para mantener la pantalla limpia
+container.style.display="none";
+}
+}
+};
+
+// Al iniciar, evaluamos si de entrada se habla de respirar
+if(contieneRespiracion && (textoBajo.includes("inhal") || textoBajo.includes("respira") || textoBajo.includes("breath"))){
+container.style.display="flex";
+} else {
+container.style.display="none";
+}
+
+utterance.onend = () => {
+// Al terminar toda la locución, la pantalla queda completamente limpia
+container.style.display="none";
+};
+
 window.speechSynthesis.speak(utterance);
+}
+
+function reproducirVozHumana(){
+if(!ultimoTextoGenerado)return;
+reproducirVozHumanaYMonitorearRespiracion(ultimoTextoGenerado);
 }
 
 function mostrarEstadoPago(tipo,mensaje){
@@ -402,7 +424,6 @@ return;
 }
 
 const detail=data.detail||"Stripe no pudo crear la sesión de pago.";
-
 mostrarEstadoPago("error",detail);
 alert(detail);
 
