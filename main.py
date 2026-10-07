@@ -7,7 +7,7 @@ import stripe
 from google import genai
 from google.genai import types
 
-app = FastAPI(title="AL CIELO - Production Engine", version="3.2.0")
+app = FastAPI(title="AL CIELO - Production Engine", version="3.3.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -96,16 +96,21 @@ except Exception:
 
 SYSTEM_WELLNESS_PROMPT = """
 You are the exclusive wellness advisor for the platform "AL CIELO", designed for adults aged 50 and over (active, seated, or bedridden).
-Your instructions must be direct, warm, compassionate, and extensive enough to provide a complete, rich, continuous guided experience. 
+Your tone must be direct, warm, compassionate, and professional.
 
-ABSOLUTE RULES:
-1. LEGAL SAFETY: Begin with a brief, warm welcome establishing this as a general wellness session for personal comfort.
-2. FULL SESSION STRUCTURE (For Full Sessions): You must write a complete, rich, sequential guide containing:
-   - Part 1: Universal Circulatory Activation (gentle micro-movements of fingers, toes, and joints to stimulate venous return safely whether sitting or lying in bed).
-   - Part 2: Postural Stability and Comfort (subtle shoulder rolls, gentle neck turns, and self-assisted stretching suited for chair, couch, or bed).
-   - Part 3: Respiratory Calibration (deep diaphragmatic breathing, slow exhalations to calm the nervous system and bring cellular oxygenation).
-3. VARIABILITY: Generate unique variations and fresh phrasing every time to keep the session engaging and dynamic.
-4. Zero medical jargon. Speak as a lifestyle and wellness specialist. Do not mention AI, automated systems, or explicit time limits like "10 minutes" in the text.
+STRICT OPERATIONAL RULES DEPENDING ON REQUEST TYPE:
+1. IF THIS IS A FREE 30-SECOND PREVIEW (is_hook=true):
+   - You must write a very short, condensed introduction of strictly 30 seconds (around 45 to 60 words maximum).
+   - Give just a quick glance of gentle breathing and a single micro-movement so the user knows what the system feels like without receiving the full session.
+
+2. IF THIS IS THE FULL 10-MINUTE PAID SESSION (is_hook=false):
+   - You must write an extensive, detailed, multi-phase session divided explicitly into 3 distinct sections of equal value, designed to last 10 full minutes when spoken calmly:
+     * Phase 1 (First ~3.5 minutes): Universal Circulatory Activation (deep micro-movements of fingers, toes, and joints to stimulate venous return safely whether sitting or lying in bed).
+     * Phase 2 (Middle ~3.5 minutes): Postural Stability and Comfort (subtle shoulder rolls, gentle neck turns, and self-assisted stretching suited for chair, couch, or bed).
+     * Phase 3 (Final ~3.3 minutes): Respiratory Calibration (deep diaphragmatic breathing, slow exhalations to calm the nervous system and bring cellular oxygenation).
+   - Provide rich, thorough instructions with pauses and deep pacing.
+
+3. LEGAL SAFETY: Always maintain zero medical jargon. Speak as a lifestyle and wellness specialist.
 """
 
 
@@ -263,23 +268,30 @@ async def generate_session(request: Request):
                 status_code=403, detail="Subscription required."
             )
 
-        duration_desc = (
-            "A short 30-second preview focusing on gentle circulatory micro-movement and breathing."
-            if is_hook
-            else "A complete, rich, multi-phase guided wellness session including circulatory activation, postural comfort, and respiratory calibration with detailed, compassionate instructions."
-        )
         lang_names = {"es": "Spanish", "en": "English", "pt": "Portuguese"}
         selected_lang_name = lang_names.get(language, "Spanish")
         
-        prompt = f"""
-Generate [{duration_desc}] strictly in [{selected_lang_name}]
-for adults aged 50 and over. Universal design suitable whether sitting, standing, or in bed.
-Provide thorough, well-paced, compassionate instructions broken down into clear steps or paragraphs so the user has a full, rich experience.
-CRITICAL:
-Output ONLY plain conversational text in {selected_lang_name}.
-Do NOT mix languages.
-Do NOT include any intro text, titles, or meta-commentary.
+        if is_hook:
+            prompt = f"""
+Generate a strict 30-SECOND FREE PREVIEW in [{selected_lang_name}].
+Keep it extremely brief (max 50 words): a quick greeting and one micro-movement with breathing.
+Do NOT output a 10-minute session. This is just a short 30-second taste.
+Output ONLY plain text in {selected_lang_name}. No titles.
 """
+            max_tokens = 150
+        else:
+            prompt = f"""
+Generate a FULL 10-MINUTE GUIDED WELLNESS SESSION strictly in [{selected_lang_name}]
+for adults aged 50 and over (active, seated, or bedridden).
+It must be extensive, detailed, and structured precisely into 3 distinct phases of 3 minutes and 33 seconds each:
+- FASE 1: Activación Circulatoria Universal (retorno venoso mediante micro-movimientos articulares).
+- FASE 2: Estabilidad Postural y Confort (liberación de tensión en hombros, cuello y torso).
+- FASE 3: Calibración Respiratoria (respiración diafragmática profunda y oxigenación).
+Provide an expansive, rich, step-by-step guidance text that takes a full 10 minutes to read aloud at a calm, slow therapeutic pace.
+Output ONLY plain conversational text in {selected_lang_name}. No meta-commentary or titles.
+"""
+            max_tokens = 1500
+
         response_text = ""
         if gemini_client:
             try:
@@ -289,7 +301,7 @@ Do NOT include any intro text, titles, or meta-commentary.
                     config=types.GenerateContentConfig(
                         system_instruction=SYSTEM_WELLNESS_PROMPT,
                         temperature=0.75,
-                        max_output_tokens=1000,  # Ensures a full, comprehensive response
+                        max_output_tokens=max_tokens,
                     ),
                 )
                 response_text = response.text or ""
@@ -297,12 +309,20 @@ Do NOT include any intro text, titles, or meta-commentary.
                 response_text = ""
 
         if not response_text:
-            if language == "en":
-                response_text = "Welcome to AL CIELO. Wherever you are resting today, take a comfortable posture. Begin by gently opening and closing your fingers and toes, feeling the natural warmth and circulation returning to your extremities. Next, release any tension in your shoulders with slow, gentle movements, letting your posture settle comfortably into your support. Finally, bring your awareness to your breathing: take a deep, slow inhalation through your nose, expanding your chest softly, and release the breath in a long, calming exhale. Rest easy and enjoy your day of vitality."
-            elif language == "pt":
-                response_text = "Bem-vindo ao AL CIELO. Onde quer que esteja descansando hoje, adote uma postura confortável. Comece abrindo e fechando suavemente os dedos das mãos e dos pés, sentindo o calor natural e a circulação retornando às extremidades. Em seguida, libere qualquer tensão nos ombros com movimentos lentos e suaves. Por fim, traga sua atenção para a respiração: faça uma inspiração profunda pelo nariz e expire longamente pela boca, encontrando calma e bem-estar."
+            if is_hook:
+                if language == "en":
+                    response_text = "Free Preview (30s): Welcome to AL CIELO. Take a comfortable posture, inhale deeply through your nose, and gently flex your fingers and toes to feel the natural circulation."
+                elif language == "pt":
+                    response_text = "Amostra Gratuita (30s): Bem-vindo ao AL CIELO. Adote uma postura confortável, inspire profundamente pelo nariz e mova suavemente os dedos das mãos e dos pés."
+                else:
+                    response_text = "Muestra Gratuita (30s): Bienvenido a AL CIELO. Adote una postura cómoda, inhale hondo por la nariz y mueva suavemente los dedos de sus manos y pies."
             else:
-                response_text = "Bienvenido a AL CIELO. Dondequiera que esté descansando hoy, adopte una postura cómoda. Comience abriendo y cerrando suavemente los dedos de sus manos y de sus pies, sintiendo el calor natural y la circulación que regresa a sus extremidades. A continuación, libere cualquier tensión en sus hombros con movimientos lentos y suaves, permitiendo que su postura se relaje por completo. Finalmente, lleve su atención a la respiración: realice una inhalación profunda por la nariz, expandiendo su pecho con suavidad, y exhale de forma larga y pausada para calmar su mente y cuerpo."
+                if language == "en":
+                    response_text = "Full 10-Minute Session. Phase 1: Universal Circulatory Activation. Wherever you are resting today, settle into a supported, comfortable posture. Begin by gently flexing and extending your fingers and toes... [Phase 2: Postural Stability and Comfort] Now, bring your attention to your shoulders and neck... [Phase 3: Respiratory Calibration] Finally, center your awareness on your breath..."
+                elif language == "pt":
+                    response_text = "Sessão Completa de 10 Minutos. Fase 1: Ativação Circulatória Universal. Onde quer que esteja descansando hoje, adote uma postura confortável... [Fase 2: Estabilidade Postural e Conforto] Agora, traga sua atenção para os ombros e pescoço... [Fase 3: Calibração Respiratoria] Finalmente, concentre-se na sua respiração..."
+                else:
+                    response_text = "Sesión Completa de 10 Minutos. Fase 1: Activación Circulatoria Universal. Dondequiera que esté descansando hoy, adopte una postura cómoda y apoyada. Comience flexionando y extendiendo suavemente los dedos de sus manos y pies... [Fase 2: Estabilidad Postural y Confort] Ahora, dirija su atención hacia sus hombros y cuello... [Fase 3: Calibração Respiratoria] Finalmente, centre su conciencia en la respiración profunda..."
 
         return {"status": "success", "session_content": response_text}
     except HTTPException:
