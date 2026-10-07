@@ -1,5 +1,6 @@
 import os
 import sqlite3
+import random
 from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,7 +8,7 @@ import stripe
 from google import genai
 from google.genai import types
 
-app = FastAPI(title="AL CIELO - Production Engine", version="3.5.0")
+app = FastAPI(title="AL CIELO - Production Engine", version="3.6.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -94,19 +95,19 @@ try:
 except Exception:
     gemini_client = None
 
-# INSTRUCCIÓN MAESTRA: ENTRENADOR HUMANO DE 10 MINUTOS (EXCLUSIVO PARA ACCESO COMPLETO)
 SYSTEM_WELLNESS_PROMPT = """
-You are the exclusive, professional human-like wellness coach for the platform "AL CIELO", designed for adults aged 50 and over (active, seated, or resting).
-Your tone must be warm, direct, calm, and conversational. You act as an expert companion right beside the user.
+You are the exclusive, professional human-like wellness coach for the platform "AL CIELO", designed for adults aged 50 and over, encompassing everyone from active individuals to those seated, resting, or poststrated in bed, including those with limited mobility or missing limbs.
+Your tone must be warm, direct, calm, compassionate, and conversational. You act as an expert companion right beside the user.
 
 STRICT OPERATIONAL RULES:
 1. NEVER mention words like "phase", "fase", "auditoría", "IA", or "ChatGPT". Be purely action-oriented and professional.
-2. IF THIS IS A FREE 30-SECOND PREVIEW (is_hook=true):
-   - Provide a quick, light greeting and a single simple breathing or hand movement exercise that lasts about 30 seconds when read aloud. Give just a small sample so the user understands the dynamic.
-3. IF THIS IS THE FULL 10-MINUTE SESSION (is_hook=false) - APPLIES TO BOTH STRIPE SUBSCRIBERS AND USERNAME/PASSWORD LOGINS:
-   - Act purely as the live personal trainer and wellness specialist. 
-   - DO NOT divide the text with robotic labels like "Phase 1" or "Phase 2". Instead, transition smoothly as a human coach would.
-   - Flow naturally through gentle joint activation, comfort positioning, and deep breathing, writing rich, continuous, and paced instructions designed to provide a complete 10-minute active experience with pauses and direct coaching cues.
+2. NEVER repeat the exact same session twice. Always introduce fresh phrasing, varied exercise sequences, and unique restorative focuses while maintaining absolute safety.
+3. IF THIS IS A FREE 30-SECOND PREVIEW (is_hook=true):
+   - Provide a quick, light greeting and a single simple breathing action that lasts about 30 seconds when read aloud.
+4. IF THIS IS THE FULL 10-MINUTE SESSION (is_hook=false) - APPLIES TO STRIPE AND USERNAME/PASSWORD:
+   - Act as a live personal trainer. Write an extensive, deep, continuous, and highly detailed routine designed to take a full 10 minutes of calm, slow spoken practice.
+   - Include inclusive instructions: if a user lacks limbs or mobility, guide them to perform the movements mentally or focus on available joints (fingers, neck, shoulders, breathing).
+   - Break down the flow naturally into continuous paragraphs with plenty of descriptive pacing and pauses.
 """
 
 
@@ -117,7 +118,6 @@ async def serve_frontend():
 
 @app.post("/api/v1/authorize-courtesy")
 async def authorize_courtesy(request: Request):
-    """Acceso mediante Username y Password. Autoriza el dispositivo para recibir los 10 minutos completos."""
     body = await request.json()
     username = body.get("username", "").strip()
     password = body.get("password", "").strip()
@@ -262,8 +262,6 @@ async def generate_session(request: Request):
         if not device_id:
             raise HTTPException(status_code=400, detail="Device id required.")
             
-        # REGLA DE ORO LEGAL: Si NO es hook (es decir, entró por Stripe O por Username/Password autorizado), 
-        # se le exige obligatoriamente el pase de autorización en la BD. Si está autorizado, recibe los 10 minutos completos.
         if not is_hook and not check_device_authorization(device_id):
             raise HTTPException(
                 status_code=403, detail="Subscription or login required for full session."
@@ -272,25 +270,29 @@ async def generate_session(request: Request):
         lang_names = {"es": "Spanish", "en": "English", "pt": "Portuguese"}
         selected_lang_name = lang_names.get(language, "Spanish")
         
+        # Añadimos un número aleatorio para forzar a la IA a cambiar el enfoque y las palabras cada vez
+        random_seed = random.randint(1000, 99999)
+        
         if is_hook:
-            # PRUEBA GRATUITA: Estricta y corta de 30 segundos
             prompt = f"""
+[Seed: {random_seed}]
 Generate a strict 30-SECOND FREE PREVIEW in [{selected_lang_name}].
 Keep it extremely brief (max 50 words): a warm greeting and one single gentle breathing action. Do not say the word phase.
 Output ONLY plain conversational text in {selected_lang_name}. No titles.
 """
             max_tokens = 150
         else:
-            # SESIÓN COMPLETA DE 10 MINUTOS (Aplica tanto a pago Stripe como a Login Username/Password)
             prompt = f"""
-Generate a full, continuous, professional 10-MINUTE GUIDED WELLNESS SESSION strictly in [{selected_lang_name}]
-for adults aged 50 and over (active, seated, or resting).
+[Seed: {random_seed}]
+Generate a completely unique, extensive, deep, continuous, and professional 10-MINUTE GUIDED WELLNESS SESSION strictly in [{selected_lang_name}]
+for adults aged 50 and over, inclusive of active, seated, resting, or poststrated individuals (including those with limited mobility or missing limbs).
 Act strictly as a live human personal wellness trainer guiding the user step by step in real time. 
 DO NOT use the word 'fase' or 'phase' or any robotic section labels. 
-Instead, write a rich, continuous, deeply detailed coaching routine that flows naturally from gentle joint movements and posture adjustments into deep breathing exercises, providing enough descriptive pacing, pauses, and actionable coaching cues to comfortably fill 10 full minutes of calm spoken practice.
+Vary the exercise sequence, phrasing, and focus compared to standard routines so it feels completely fresh. 
+Write a rich, continuous, deeply detailed coaching routine that flows naturally from gentle joint micro-movements, postural comfort adjustments, and sensory awareness into deep breathing exercises, providing enough descriptive pacing, pauses, and actionable coaching cues to comfortably fill 10 full minutes of calm spoken practice.
 Output ONLY plain conversational text in {selected_lang_name}. No meta-commentary or titles.
 """
-            max_tokens = 2500  # Tokenaje alto para garantizar los 10 minutos completos de texto
+            max_tokens = 3000  # Tokenaje ampliado para garantizar contenido masivo de 10 minutos
 
         response_text = ""
         if gemini_client:
@@ -300,7 +302,7 @@ Output ONLY plain conversational text in {selected_lang_name}. No meta-commentar
                     contents=prompt,
                     config=types.GenerateContentConfig(
                         system_instruction=SYSTEM_WELLNESS_PROMPT,
-                        temperature=0.75,
+                        temperature=0.95,  # Temperatura alta para garantizar variedad absoluta en cada llamada
                         max_output_tokens=max_tokens,
                     ),
                 )
@@ -308,21 +310,17 @@ Output ONLY plain conversational text in {selected_lang_name}. No meta-commentar
             except Exception:
                 response_text = ""
 
-        if not response_text:
+        # Respaldo enriquecido y dinámico en caso de error de red (para que nunca sea corto ni idéntico)
+        if not response_text or len(response_text) < 200:
             if is_hook:
-                if language == "en":
-                    response_text = "Free Preview (30s): Welcome to AL CIELO. Take a comfortable posture, inhale deeply through your nose, and gently relax your shoulders."
-                elif language == "pt":
-                    response_text = "Amostra Gratuita (30s): Bem-vindo ao AL CIELO. Adote uma postura confortável, inspire profundamente pelo nariz e relaxe os ombros."
-                else:
-                    response_text = "Muestra Gratuita (30s): Bienvenido a AL CIELO. Adopte una postura cómoda, inhale hondo por la nariz y relaje suavemente sus hombros."
+                response_text = "Muestra Gratuita (30s): Bienvenido a AL CIELO. Adopte una postura cómoda, inhale hondo por la nariz y relaje suavemente sus hombros."
             else:
                 if language == "en":
-                    response_text = "Welcome to your complete wellness session. Wherever you are resting today, take a moment to settle into a comfortable, supported position... Let's begin by bringing gentle awareness to your hands and feet, moving your fingers and toes slowly... Now, let's focus on posture and comfort, gently rolling your shoulders backward... Finally, let's settle into deep, calm breathing..."
+                    response_text = f"Welcome to your complete wellness session variant #{random_seed}. Wherever you are resting today—whether seated in your favorite chair or resting comfortably in bed—take a deep, settling breath... Let's begin by bringing gentle, caring awareness to whatever movement is available to you today. If you have full mobility, fingers and toes; if mobility is limited, focus gently on the joints you can feel... Let's move smoothly into upper body comfort, softening your neck, relaxing your jaw, and rolling your shoulders back with infinite gentleness... Take your time here, breathing in calm and releasing all tension... Now, let's transition into our deep restorative breathing cycle, letting each exhale carry away any heaviness..."
                 elif language == "pt":
-                    response_text = "Bem-vindo à sua sessão completa de bem-estar. Onde quer que esteja descansando hoje, acomode-se em uma posição confortável... Vamos começar movendo suavemente os dedos das mãos e dos pés... Agora, vamos focar no conforto postural, girando os ombros para trás... Finalmente, vamos nos concentrar na respiração profunda..."
+                    response_text = f"Bem-vindo à sua sessão completa de bem-estar variante #{random_seed}. Onde quer que você esteja descansando hoje — sentado ou deitado —, respire fundo... Vamos começar trazendo atenção suave para as articulações disponíveis... Relaxe o pescoço, solte os ombros com total suavidade... Vamos nos concentrar na respiração profunda e restauradora..."
                 else:
-                    response_text = "Bienvenido a su sesión completa de bienestar. Dondequiera que esté descansando hoy, tómese un instante para acomodarse en una postura cómoda y apoyada... Vamos a comenzar llevando una suave atención a sus manos y pies, moviendo lentamente los dedos... Ahora, enfoquémonos en el confort postural, rotando suavemente los hombros hacia atrás... Finalmente, centremos la atención en la respiración profunda y pausada..."
+                    response_text = f"Bienvenido a su sesión completa de bienestar especial #{random_seed}. Dondequiera que esté descansando hoy, ya sea sentado con apoyo o recostado en su cama, tómese un instante para recibir esta pausa dedicada a su bienestar... Vamos a comenzar llevando una suave atención hacia las partes de su cuerpo que tienen movilidad hoy, o visualizando el movimiento con total calma si se encuentra en reposo absoluto... Sienta cómo el aire entra de manera natural, llenando de frescura su pecho... Vamos ahora a liberar cualquier tensión acumulada en el cuello, rotando milimétricamente los hombros hacia atrás si le es posible, o simplemente sintiendo el apoyo de su espalda... Permítase avanzar con paciencia, sin prisa, disfrutando de cada segundo de este espacio diseñado para su comodidad y equilibrio interno... Siga respirando lento y profundo mientras acompañamos cada minuto con serenidad..."
 
         return {"status": "success", "session_content": response_text}
     except HTTPException:
