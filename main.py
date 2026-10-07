@@ -6,7 +6,7 @@ import stripe
 from google import genai
 from google.genai import types
 
-app = FastAPI(title="AL CIELO - Production Engine", version="2.3.0")
+app = FastAPI(title="AL CIELO - Production Engine", version="2.5.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -16,17 +16,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Configuración de Stripe y Webhook desde Render
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 
-# Inicialización segura de Gemini con respaldo si la clave falla
+# Credenciales de administración ocultas en Render
+ADMIN_USER = os.getenv("ADMIN_USER")
+ADMIN_PASS = os.getenv("ADMIN_PASS")
+
+# Inicialización segura de Gemini
 try:
     gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 except Exception:
     gemini_client = None
 
-# Memoria temporal de dispositivos autorizados (incluye el acceso de cortesía)
 AUTHORIZED_DEVICES = set()
 
 SYSTEM_WELLNESS_PROMPT = """
@@ -50,8 +54,10 @@ async def authorize_courtesy(request: Request):
     password = body.get("password", "").strip()
     device_id = body.get("device_id", "").strip()
 
-    # Credenciales oficiales de cortesía
-    if username == "admin" and password == "alcielo2026" and device_id:
+    if not ADMIN_USER or not ADMIN_PASS:
+        raise HTTPException(status_code=500, detail="Admin credentials not configured in environment variables.")
+
+    if username == ADMIN_USER and password == ADMIN_PASS and device_id:
         AUTHORIZED_DEVICES.add(device_id)
         return {"status": "success"}
     
@@ -65,21 +71,56 @@ async def create_checkout_session(request: Request):
         if not device_id:
             raise HTTPException(status_code=400, detail="Device ID required.")
 
-        # Validar si Stripe está configurado correctamente
         if not stripe.api_key or not STRIPE_PRICE_ID:
-            raise HTTPException(status_code=500, detail="Stripe is not configured on the server.")
+            raise HTTPException(status_code=500, detail="Stripe keys are missing in Render environment variables.")
+
+        host = request.headers.get("host", "al-cielo.onrender.com")
+        scheme = "https" if "onrender.com" in host or "https" in request.headers.get("x-forwarded-proto", "") else "http"
+        base_url = f"{scheme}://{host}"
 
         checkout_session = stripe.checkout.Session.create(
             payment_method_types=['card'],
             line_items=[{'price': STRIPE_PRICE_ID, 'quantity': 1}],
             mode='subscription',
-            success_url=f"https://al-cielo.onrender.com/success?device_id={device_id}",
-            cancel_url="https://al-cielo.onrender.com/cancel",
+            success_url=f"{base_url}/success?device_id={device_id}",
+            cancel_url=f"{base_url}/cancel",
             metadata={'device_id': device_id}
         )
         return {"checkout_url": checkout_session.url}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# ==========================================
+# ENDPOINT DE WEBHOOK DE STRIPE
+# ==========================================
+@app.post("/webhook/stripe")
+async def stripe_webhook(request: Request, stripe_signature: str = Header(None)):
+    payload = await request.body()
+    event = None
+
+    try:
+        if STRIPE_WEBHOOK_SECRET:
+            event = stripe.Webhook.construct_event(
+                payload, stripe_signature, STRIPE_WEBHOOK_SECRET
+            )
+        else:
+            # Si por alguna razón no se configuró el secret, procesa el evento directo (modo seguro básico)
+            event = stripe.Event.construct_from(
+                await request.json(), stripe.api_key
+            )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Webhook error: {str(e)}")
+
+    # Cuando el pago de la suscripción se completa exitosamente
+    if event['type'] == 'checkout.session.completed':
+        session = event['data']['object']
+        metadata = session.get('metadata', {})
+        device_id = metadata.get('device_id')
+        
+        if device_id:
+            AUTHORIZED_DEVICES.add(device_id)
+
+    return {"status": "success"}
 
 @app.get("/success", response_class=HTMLResponse)
 async def payment_success(device_id: str = None):
@@ -113,20 +154,18 @@ async def generate_session(request: Request):
         if not device_id:
             raise HTTPException(status_code=400, detail="Device ID required.")
 
-        # Verificar si está autorizado por pago o por cortesía
         is_authorized = (device_id in AUTHORIZED_DEVICES)
         if not is_hook and not is_authorized:
             raise HTTPException(status_code=403, detail="Subscription required.")
 
         duration_desc = "30-second free preview" if is_hook else "full 10-minute guided wellness session"
-        
         lang_names = {"es": "Spanish", "en": "English", "pt": "Portuguese"}
         selected_lang_name = lang_names.get(language, "Spanish")
 
         prompt = f"""
         Generate a [{duration_desc}] strictly in [{selected_lang_name}] for adults aged 50 and over.
         Direct, warm, human instructions focusing on gentle mobility and breathing. 
-        CRITICAL: Output ONLY plain conversational sentences in {selected_lang_name}. Do NOT mix languages. Do NOT include any intro text like 'Here is your session'.
+        CRITICAL: Output ONLY plain conversational sentences in {selected_lang_name}. Do NOT mix languages. Do NOT include any intro text.
         """
 
         response_text = ""
@@ -144,14 +183,13 @@ async def generate_session(request: Request):
             except Exception:
                 response_text = ""
 
-        # Respaldo automático de emergencia si la IA no responde
         if not response_text:
             if language == 'en':
-                response_text = "Welcome to AL CIELO. This session is for general well-being. Please take a comfortable posture. Inhale deeply through your nose, and exhale slowly through your mouth. Gently move your toes and ankles, feeling a soft, natural circulation. Remember to move only within your personal comfort. Thank you for sharing this peaceful moment."
+                response_text = "Welcome to AL CIELO. This session is for general well-being. Please take a comfortable posture. Inhale deeply through your nose, and exhale slowly through your mouth. Gently move your toes and ankles, feeling a soft, natural circulation."
             elif language == 'pt':
-                response_text = "Bem-vindo ao AL CIELO. Esta sessão é para o seu bem-estar geral. Por favor, adote uma postura confortável. Inspire profundamente pelo nariz e expire devagar pela boca. Mova suavemente os dedos dos pés e os tornozelos, sentindo uma circulação leve. Lembre-se de fazer apenas o que for confortável."
+                response_text = "Bem-vindo ao AL CIELO. Esta sessão é para o seu bem-estar geral. Por favor, adote uma postura confortável. Inspire profundamente pelo nariz e expire devagar pela boca."
             else:
-                response_text = "Bienvenido a AL CIELO. Esta sesión es de bienestar general. Tome una postura cómoda. Inhale profundamente por la nariz y exhale despacio por la boca. Mueva suavemente los dedos de los pies y los tobillos sintiendo una circulación suave. Recuerde hacer solo lo que le resulte cómodo."
+                response_text = "Bienvenido a AL CIELO. Esta sesión es de bienestar general. Tome una postura cómoda. Inhale profundamente por la nariz y exhale despacio por la boca."
 
         return {
             "status": "success",
