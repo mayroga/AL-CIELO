@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AL CIELO - Bienestar y Movilidad (50+)</title>
 <style>
-/* Estilos anteriores intactos, añadimos control dinámico para el círculo respiratorio */
 *{box-sizing:border-box}
 body{font-family:system-ui,-apple-system,sans-serif;background:#0f172a;color:#f8fafc;margin:0;padding:20px;display:flex;flex-direction:column;align-items:center;min-height:100vh}
 .admin-corner{position:absolute;top:10px;right:15px;font-size:.75rem;color:#334155;cursor:pointer;user-select:none}
@@ -35,7 +34,7 @@ select{font-size:1.1rem;padding:14px;width:100%;border-radius:8px;border:1px sol
 #output-container{margin-top:25px;display:none;flex-direction:column;align-items:center}
 #output-box{background:#0f172a;border:1px solid #334155;padding:20px;border-radius:8px;font-size:1.1rem;line-height:1.6;width:100%;max-height:200px;overflow-y:auto;color:#f8fafc;white-space:pre-wrap;margin-bottom:20px}
 
-/* Círculo respiratorio dinámico y oculto por defecto hasta que la voz toque respiración */
+/* Círculo respiratorio dinámico optimizado */
 .breathing-view{display:none;flex-direction:column;align-items:center;justify-content:center;background:#0b1329;border:2px solid #38bdf8;padding:30px;border-radius:16px;width:100%;text-align:center;margin-top:10px}
 .breath-circle{width:220px;height:220px;border-radius:50%;background:radial-gradient(circle, #38bdf8 0%, #0284c7 70%, #0369a1 100%);box-shadow:0 0 30px rgba(56, 189, 248, 0.4);display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-weight:bold;font-size:1.4rem;transition:transform 3.5s ease-in-out;margin:20px 0}
 .breath-info{font-size:1rem;color:#bae6fd;margin-top:10px;max-width:400px;line-height:1.4}
@@ -64,12 +63,12 @@ select{font-size:1.1rem;padding:14px;width:100%;border-radius:8px;border:1px sol
 
 <div class="info-card" id="infoCardSection">
 <h3 id="t-what-is-title">¿Qué es y para qué sirve AL CIELO?</h3>
-<p id="t-what-is-desc">Es un sistema de bienestar integral diseñado para personas de 50 años en adelante. Ofrece rutinas guiadas de bienestar y movilidad adaptadas a diferentes realidades.</p>
+<p id="t-what-is-desc">Es un sistema de bienestar integral diseñado para personas de 50 años en adelante. Ofrece rutinas guiadas de bienestar y movilidad adaptadas a diferentes realidades (activos, en silla de ruedas, encamados, etc.).</p>
 
 <h3 id="t-contains-title" style="margin-top:15px">¿Qué contiene el servicio?</h3>
 <ul>
-<li><strong id="t-c1-strong">Movilidad Universal Adaptada:</strong> <span id="t-c1-desc">Ejercicios suaves aptos tanto para personas activas como para quienes están en silla de ruedas o encamados (incluyendo repeticiones para un bienestar completo).</span></li>
-<li><strong id="t-c2-strong">Doble Accesibilidad (Audio y Visual):</strong> <span id="t-c2-desc">Guía de respiración visual inmersiva en pantalla y locución detallada.</span></li>
+<li><strong id="t-c1-strong">Movilidad Universal Adaptada:</strong> <span id="t-c1-desc">Ejercicios suaves aptos tanto para personas activas como para quienes están en silla de ruedas o encamados.</span></li>
+<li><strong id="t-c2-strong">Doble Accesibilidad (Audio y Visual):</strong> <span id="t-c2-desc">Círculo respiratorio sincronizado al compás de la voz y textos claros en pantalla.</span></li>
 <li><strong id="t-c3-strong">Sesiones Optimizadas:</strong> <span id="t-c3-desc">Respiración y movimientos suaves sin tecnicismos médicos.</span></li>
 </ul>
 </div>
@@ -94,7 +93,7 @@ select{font-size:1.1rem;padding:14px;width:100%;border-radius:8px;border:1px sol
 <div id="payment-status"></div>
 </div>
 
-<!-- Contenedor Despejado y Círculo Respiratorio -->
+<!-- Contenedor Despejado y Círculo Respiratorio Sincronizado -->
 <div id="output-container">
 <div id="output-box"></div>
 <div id="breathingVisualView" class="breath-view">
@@ -114,7 +113,6 @@ select{font-size:1.1rem;padding:14px;width:100%;border-radius:8px;border:1px sol
 <script>
 let ultimoTextoGenerado="";
 let deviceId=null;
-let breathingInterval=null;
 
 const traducciones={
 es:{
@@ -125,8 +123,8 @@ containsTitle:"¿Qué contiene el servicio?",
 c1Strong:"Movilidad Universal Adaptada:",
 c1Desc:"Ejercicios suaves aptos tanto para personas activas como para quienes están en silla de ruedas o encamados.",
 c2Strong:"Doble Accesibilidad (Audio y Texto Visual):",
-c2Desc:"Puedes escuchar las instrucciones y también leerlas en pantalla.",
-c3Strong:"Sesiones de 10 Minutos:",
+c2Desc:"Guía de respiración visual inmersiva al compás de la voz y locución detallada.",
+c3Strong:"Sesiones de Bienestar:",
 c3Desc:"Respiración y movimientos suaves sin tecnicismos médicos.",
 langLabel:"Seleccione su Idioma / Select Language:",
 btnPrev:"▶️ Ver y Escuchar Muestra Gratuita (30 Segundos)",
@@ -145,8 +143,8 @@ containsTitle:"What does the service include?",
 c1Strong:"Adapted Universal Mobility:",
 c1Desc:"Gentle exercises suitable for active individuals as well as people using wheelchairs or who are bedridden.",
 c2Strong:"Dual Accessibility (Audio and Visual Text):",
-c2Desc:"You can listen to the instructions and also read them on screen.",
-c3Strong:"10-Minute Sessions:",
+c2Desc:"Visual breathing guide synchronized to the voice and detailed speech.",
+c3Strong:"Wellness Sessions:",
 c3Desc:"Breathing and gentle movements without medical jargon.",
 langLabel:"Select Language:",
 btnPrev:"▶️ View & Listen Free Preview (30 Seconds)",
@@ -165,8 +163,8 @@ containsTitle:"O que o serviço contém?",
 c1Strong:"Mobilidade Universal Adaptada:",
 c1Desc:"Exercícios suaves adequados para pessoas ativas, em cadeira de rodas ou acamadas.",
 c2Strong:"Dupla Acessibilidade (Áudio e Texto Visual):",
-c2Desc:"Você pode ouvir as instruções e também lê-las na tela.",
-c3Strong:"Sessões de 10 Minutos:",
+c2Desc:"Guia de respiração visual sincronizada ao compasso da voz e locução detalhada.",
+c3Strong:"Sessões de Bem-estar:",
 c3Desc:"Respiração e movimentos suaves sem jargões médicos.",
 langLabel:"Selecione o Idioma:",
 btnPrev:"▶️ Ver e Ouvir Amostra Gratuita (30 Segundos)",
@@ -246,6 +244,41 @@ const outContainer=document.getElementById("output-container");
 outContainer.style.display="flex";
 }
 
+/* ENCADENADO CON MAIN.PY: Envía la petición al backend y procesa la respuesta */
+async function obtenerContenido(isHook){
+const lang=document.getElementById("languageSelect").value;
+iniciarPantallaDespejada();
+const outputBox=document.getElementById("output-box");
+outputBox.innerText=lang==="es"?"Generando sesión personalizada...":lang==="pt"?"Gerando sessão personalizada...":"Generating personalized session...";
+
+try{
+const response=await fetch("/api/v1/generate-session",{
+method:"POST",
+headers:{"Content-Type":"application/json"},
+body:JSON.stringify({device_id:getDeviceId(),language:lang,is_hook:isHook})
+});
+
+const data=await response.json().catch(()=>({}));
+
+if(response.ok){
+ultimoTextoGenerado=data.content||data.message||"";
+outputBox.innerText=ultimoTextoGenerado;
+document.getElementById("audioControlBtn").style.display="block";
+reproducirVozHumana();
+}else{
+if(response.status===403){
+outputBox.innerText=data.detail||(lang==="es"?"Se requiere suscripción activa para continuar.":"Active subscription required.");
+document.getElementById("subscriptionSection").style.display="block";
+}else{
+outputBox.innerText=data.detail||(lang==="es"?"Ocurrió un error al generar la sesión.":"Error generating session.");
+}
+}
+}catch(err){
+outputBox.innerText="Connection error: "+err.message;
+}
+}
+
+/* FUNCIÓN DE VOZ OPTIMIZADA (SIN CONGELAMIENTOS) */
 function reproducirVozHumana(){
 if(!ultimoTextoGenerado)return;
 if(!("speechSynthesis" in window))return;
@@ -268,7 +301,6 @@ const phaseText=document.getElementById("breathPhaseText");
 const descText=document.getElementById("breathDescText");
 const benefitText=document.getElementById("breathBenefitText");
 
-// Variable de control para evitar redibujados innecesarios y congelamientos
 let estadoRespiracionActual = false;
 
 utterance.onboundary=(event)=>{
@@ -314,7 +346,7 @@ estadoRespiracionActual = false;
 
 window.speechSynthesis.speak(utterance);
 }
-  
+
 function mostrarEstadoPago(tipo,mensaje){
 const box=document.getElementById("payment-status");
 box.style.display="block";
