@@ -142,3 +142,11 @@ async def generate_session(request: Request):
         raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+  @app.get("/")
+async def root():
+    return {
+        "app_name": "AL CIELO",
+        "status": "online",
+        "target": "50+ Universal Wellness",
+        "version": "1.0.0"
+    }      
