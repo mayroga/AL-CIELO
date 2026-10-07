@@ -7,7 +7,7 @@ import stripe
 from google import genai
 from google.genai import types
 
-app = FastAPI(title="AL CIELO - Production Engine", version="3.0.2")
+app = FastAPI(title="AL CIELO - Production Engine", version="3.0.3")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -81,7 +81,7 @@ Your instructions must be direct, extremely concise, warm, and highly effective.
 
 ABSOLUTE RULES:
 1. LEGAL SAFETY BLOCK: Every session strictly starts by stating that this is a general wellness service, not medical advice, and that each person participates at their own discretion and comfort.
-2. DURATION & REPETITIONS: For full sessions, explicitly structure exercises with clear repetitions (repeat 2 to 3 times) and paced breathing phases so the entire routine spans a full, calming duration suitable for daily well-being.
+2. DURATION, REPETITIONS & PACED PAUSES: For full sessions, explicitly structure exercises with clear repetitions (repeat 2 to 3 times) and integrated PAUSES (instructing a calm waiting period or pause of approximately 15 seconds between exercises and repetitions) so the entire routine spans a proper calming rhythm suitable for daily well-being.
 3. BREATHING SECTIONS: Clearly indicate when breathing phases occur, describing their gentle health benefits (e.g., calming the nervous system, improving oxygen flow) so the visual breathing guide synchronizes perfectly.
 4. Zero medical jargon. Speak as a lifestyle and wellness specialist.
 """
@@ -207,13 +207,13 @@ async def generate_session(request: Request):
         if not is_hook and not check_device_authorization(device_id):
             raise HTTPException(status_code=403, detail="Subscription required.")
 
-        duration_desc = "30-second free preview" if is_hook else "full 10-minute guided wellness session structured with repetition cycles (repeat 2 to 3 times) and dedicated breathing phases with benefits"
+        duration_desc = "30-second free preview" if is_hook else "full 10-minute guided wellness session structured with repetition cycles (repeat 2 to 3 times), explicit 15-second pacing pauses between movements, and dedicated breathing phases with benefits"
         lang_names = {"es": "Spanish", "en": "English", "pt": "Portuguese"}
         selected_lang_name = lang_names.get(language, "Spanish")
         prompt = f"""
 Generate a [{duration_desc}] strictly in [{selected_lang_name}]
 for adults aged 50 and over.
-Direct, warm, human instructions focusing on gentle mobility and breathing.
+Direct, warm, human instructions focusing on gentle mobility, breathing, and explicit pauses.
 CRITICAL:
 Output ONLY plain conversational sentences in {selected_lang_name}.
 Do NOT mix languages.
@@ -236,11 +236,11 @@ Do NOT include any intro text.
 
         if not response_text:
             if language == "en":
-                response_text = "Welcome to AL CIELO. This session is for general well-being. Please take a comfortable posture. Inhale deeply through your nose, and exhale slowly through your mouth, repeating this cycle 3 times to calm your nervous system and oxygenate your body. Gently move your toes and ankles, repeating 3 times to stimulate circulation."
+                response_text = "Welcome to AL CIELO. This session is for general well-being. Please take a comfortable posture. Inhale deeply through your nose, and exhale slowly through your mouth, repeating this cycle 3 times to calm your nervous system. [Pause 15 seconds]. Gently move your toes and ankles, repeating 3 times to stimulate circulation. [Pause 15 seconds]."
             elif language == "pt":
-                response_text = "Bem-vindo ao AL CIELO. Esta sessão é para o seu bem-estar geral. Por favor, adote uma postura confortável. Inspire profundamente pelo nariz e expire devagar pela boca, repetindo este ciclo 3 vezes para acalmar o sistema nervoso. Mova suavemente os dedos dos pés e tornozelos, repetindo 3 vezes."
+                response_text = "Bem-vindo ao AL CIELO. Esta sessão é para o seu bem-estar geral. Por favor, adote uma postura confortável. Inspire profundamente pelo nariz e expire devagar pela boca, repetindo este ciclo 3 vezes para acalmar o sistema nervoso. [Pausa de 15 segundos]. Mova suavemente os dedos dos pés e tornozelos, repetindo 3 vezes. [Pausa de 15 segundos]."
             else:
-                response_text = "Bienvenido a AL CIELO. Esta sesión es de bienestar general. Tome una postura cómoda. Inhale profundamente por la nariz y expire despacio por la boca, repitiendo este ciclo 3 veces para calmar el sistema nervioso y oxigenar su cuerpo. Mueva suavemente los dedos de los pies y los tobillos, repitiendo este proceso 3 veces."
+                response_text = "Bienvenido a AL CIELO. Esta sesión es de bienestar general. Tome una postura cómoda. Inhale profundamente por la nariz y expire despacio por la boca, repitiendo este ciclo 3 veces para calmar el sistema nervioso. [Pausa de 15 segundos]. Mueva suavemente los dedos de los pies y los tobillos, repitiendo este proceso 3 veces. [Pausa de 15 segundos]."
 
         return {"status": "success", "session_content": response_text}
     except HTTPException:
