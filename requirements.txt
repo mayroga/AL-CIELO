@@ -3,3 +3,4 @@ uvicorn
 stripe
 google-genai
 pydantic
+openai
