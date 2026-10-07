@@ -37,7 +37,7 @@ select{font-size:1.1rem;padding:14px;width:100%;border-radius:8px;border:1px sol
 .payment-error{background:#450a0a;color:#fecaca;border:1px solid #ef4444}
 .legal-notice{font-size:.85rem;color:#64748b;margin-top:25px;border-top:1px solid #334155;padding-top:15px;line-height:1.4;text-align:center}
 
-/* Círculo respiratorio dinámico adaptado a la IA */
+/* Círculo respiratorio estricto y dinámico */
 #breathing-circle-container {
 display: none;
 flex-direction: column;
@@ -86,13 +86,13 @@ animation: breatheAnim 6s infinite ease-in-out;
 
 <div class="info-card">
 <h3 id="t-what-is-title">¿Qué es y para qué sirve AL CIELO?</h3>
-<p id="t-what-is-desc">Es un sistema de bienestar integral diseñado para personas de 50 años en adelante. Ofrece rutinas guiadas de bienestar y movilidad adaptadas a diferentes realidades.</p>
+<p id="t-what-is-desc">Sistema de entrenamiento y bienestar integral con rutinas guiadas de repeticiones claras y movilidad adaptada.</p>
 
 <h3 id="t-contains-title" style="margin-top:15px">¿Qué contiene el servicio?</h3>
 <ul>
-<li><strong id="t-c1-strong">Movilidad Universal Adaptada:</strong> <span id="t-c1-desc">Ejercicios suaves aptos tanto para personas activas como para quienes están en silla de ruedas o encamados.</span></li>
-<li><strong id="t-c2-strong">Doble Accesibilidad (Audio y Texto Visual):</strong> <span id="t-c2-desc">Puedes escuchar las instrucciones y también leerlas en pantalla.</span></li>
-<li><strong id="t-c3-strong">Sesiones de 10 Minutos:</strong> <span id="t-c3-desc">Respiración y movimientos suaves sin tecnicismos médicos.</span></li>
+<li><strong id="t-c1-strong">Movilidad Universal Adaptada:</strong> <span id="t-c1-desc">Ejercicios estructurados con series y repeticiones definidas para encamados, sillas de ruedas o activos.</span></li>
+<li><strong id="t-c2-strong">Doble Accesibilidad (Audio y Texto):</strong> <span id="t-c2-desc">Instrucciones precisas de voz y lectura visual en pantalla.</span></li>
+<li><strong id="t-c3-strong">Sesiones de Entrenamiento Dirigido:</strong> <span id="t-c3-desc">Control exacto del esfuerzo, pausas y respiración consciente.</span></li>
 </ul>
 </div>
 
@@ -109,15 +109,15 @@ animation: breatheAnim 6s infinite ease-in-out;
 <button id="audioControlBtn" class="btn btn-audio" onclick="reproducirVozHumana()">🗣️ Volver a escuchar en voz alta</button>
 </div>
 
-<!-- Contenedor dinámico del círculo de respiración -->
+<!-- Contenedor estricto del círculo de respiración -->
 <div id="breathing-circle-container">
-<span id="b-label" style="font-size:0.95rem;color:#94a3b8;font-weight:bold;">Guía de Respiración Consciente</span>
+<span id="b-label" style="font-size:0.95rem;color:#94a3b8;font-weight:bold;">Guía de Respiración y Control de Oxígeno</span>
 <div class="b-circle" id="breathingCircleEl"></div>
 </div>
 
 <div class="control-group" style="background:#111827;padding:15px;border-radius:8px;text-align:center;border:1px dashed #374151">
 <label id="t-sub-title" style="color:#4ade80;font-size:1.1rem;margin-bottom:5px">Suscripción ($15.99 / mes)</label>
-<p id="t-sub-desc" style="font-size:.95rem;color:#9ca3af;margin:5px 0 15px">Acceso a las sesiones completas mientras la suscripción permanezca activa.</p>
+<p id="t-sub-desc" style="font-size:.95rem;color:#9ca3af;margin:5px 0 15px">Acceso total a rutinas guiadas con repeticiones y control activo.</p>
 <button id="btn-pay-text" class="btn btn-pay" onclick="iniciarPagoStripe()">💳 Activar Suscripción Segura</button>
 <div id="payment-status"></div>
 </div>
@@ -125,7 +125,7 @@ animation: breatheAnim 6s infinite ease-in-out;
 <div id="output-box"></div>
 
 <div id="t-legal" class="legal-notice">
-<strong>Aviso Legal y de Responsabilidad:</strong> AL CIELO es un servicio de bienestar general y estilo de vida, no un servicio médico ni de diagnóstico. Cada usuario participa bajo su propia discreción y comodidad personal.
+<strong>Aviso Legal y de Responsabilidad:</strong> AL CIELO es un servicio de bienestar general y estilo de vida. Cada usuario participa bajo su propia discreción y comodidad personal.
 </div>
 </div>
 
@@ -137,62 +137,62 @@ const traducciones={
 es:{
 subtitle:"Bienestar, Movilidad y Conexión Diaria (50+)",
 whatIsTitle:"¿Qué es y para qué sirve AL CIELO?",
-whatIsDesc:"Es un sistema de bienestar integral diseñado para personas de 50 años en adelante. Ofrece rutinas guiadas de bienestar y movilidad adaptadas a diferentes realidades.",
+whatIsDesc:"Sistema de entrenamiento y bienestar integral con rutinas guiadas de repeticiones claras y movilidad adaptada.",
 containsTitle:"¿Qué contiene el servicio?",
 c1Strong:"Movilidad Universal Adaptada:",
-c1Desc:"Ejercicios suaves aptos tanto para personas activas como para quienes están en silla de ruedas o encamados.",
-c2Strong:"Doble Accesibilidad (Audio y Texto Visual):",
-c2Desc:"Puedes escuchar las instrucciones y también leerlas en pantalla.",
-c3Strong:"Sesiones de 10 Minutos:",
-c3Desc:"Respiración y movimientos suaves sin tecnicismos médicos.",
+c1Desc:"Ejercicios estructurados con series y repeticiones definidas para encamados, sillas de ruedas o activos.",
+c2Strong:"Doble Accesibilidad (Audio y Texto):",
+c2Desc:"Instrucciones precisas de voz y lectura visual en pantalla.",
+c3Strong:"Sesiones de Entrenamiento Dirigido:",
+c3Desc:"Control exacto del esfuerzo, pausas y respiración consciente.",
 langLabel:"Seleccione su Idioma / Select Language:",
 btnPrev:"▶️ Ver y Escuchar Muestra Gratuita (30 Segundos)",
 btnSess:"🔊 Iniciar Sesión Completa de Bienestar",
 audioBtn:"🗣️ Volver a escuchar en voz alta",
 subTitle:"Suscripción ($15.99 / mes)",
-subDesc:"Acceso a las sesiones completas mientras la suscripción permanezca activa.",
+subDesc:"Acceso total a rutinas guiadas con repeticiones y control activo.",
 btnPay:"💳 Activar Suscripción Segura",
-legal:"<strong>Aviso Legal y de Responsabilidad:</strong> AL CIELO es un servicio de bienestar general y estilo de vida, no un servicio médico ni de diagnóstico. Cada usuario participa bajo su propia discreción y comodidad personal."
+legal:"<strong>Aviso Legal y de Responsabilidad:</strong> AL CIELO es un servicio de bienestar general y estilo de vida. Cada usuario participa bajo su propia discreción y comodidad personal."
 },
 en:{
 subtitle:"Wellness, Mobility and Daily Connection (50+)",
 whatIsTitle:"What is AL CIELO and what is it for?",
-whatIsDesc:"It is a wellness system designed for people aged 50 and over. It offers guided wellness and mobility routines adapted to different situations.",
+whatIsDesc:"Comprehensive wellness and training system with clear repetition guidelines and adapted mobility.",
 containsTitle:"What does the service include?",
 c1Strong:"Adapted Universal Mobility:",
-c1Desc:"Gentle exercises suitable for active individuals as well as people using wheelchairs or who are bedridden.",
+c1Desc:"Structured exercises with defined series and repetitions for bedridden, wheelchair users, or active individuals.",
 c2Strong:"Dual Accessibility (Audio and Visual Text):",
-c2Desc:"You can listen to the instructions and also read them on screen.",
-c3Strong:"10-Minute Sessions:",
-c3Desc:"Breathing and gentle movements without medical jargon.",
+c2Desc:"Precise voice instructions and visual reading on screen.",
+c3Strong:"Directed Training Sessions:",
+c3Desc:"Exact control of effort, pauses, and conscious breathing.",
 langLabel:"Select Language:",
 btnPrev:"▶️ View & Listen Free Preview (30 Seconds)",
 btnSess:"🔊 Start Full Wellness Session",
 audioBtn:"🗣️ Listen aloud again",
 subTitle:"Subscription ($15.99 / month)",
-subDesc:"Access to full sessions while the subscription remains active.",
+subDesc:"Full access to guided routines with repetitions and active control.",
 btnPay:"💳 Activate Secure Subscription",
-legal:"<strong>Legal Notice and Disclaimer:</strong> AL CIELO is a general wellness and lifestyle service, not a medical or diagnostic service. Each user participates at their own discretion and comfort."
+legal:"<strong>Legal Notice and Disclaimer:</strong> AL CIELO is a general wellness and lifestyle service. Each user participates at their own discretion and comfort."
 },
 pt:{
 subtitle:"Bem-estar, Mobilidade e Conexão Diária (50+)",
 whatIsTitle:"O que é e para que serve o AL CIELO?",
-whatIsDesc:"É um sistema de bem-estar projetado para pessoas com 50 anos ou mais. Oferece rotinas guiadas de bem-estar e mobilidade adaptadas a diferentes situações.",
+whatIsDesc:"Sistema de treinamento e bem-estar integral com rotinas guiadas de repetições claras e mobilidade adaptada.",
 containsTitle:"O que o serviço contém?",
 c1Strong:"Mobilidade Universal Adaptada:",
-c1Desc:"Exercícios suaves adequados para pessoas ativas, em cadeira de rodas ou acamadas.",
-c2Strong:"Dupla Acessibilidade (Áudio e Texto Visual):",
-c2Desc:"Você pode ouvir as instruções e também lê-las na tela.",
-c3Strong:"Sessões de 10 Minutos:",
-c3Desc:"Respiração e movimentos suaves sem jargões médicos.",
+c1Desc:"Exercícios estruturados com séries e repetições definidas para acamados, cadeirantes ou ativos.",
+c2Strong:"Dupla Acessibilidade (Áudio e Texto):",
+c2Desc:"Instruções precisas de voz e leitura visual na tela.",
+c3Strong:"Sessões de Treinamento Dirigido:",
+c3Desc:"Controle exato do esforço, pausas e respiração consciente.",
 langLabel:"Selecione o Idioma:",
 btnPrev:"▶️ Ver e Ouvir Amostra Gratuita (30 Segundos)",
 btnSess:"🔊 Iniciar Sessão Completa de Bem-estar",
 audioBtn:"🗣️ Ouvir em voz alta novamente",
 subTitle:"Assinatura ($15.99 / mês)",
-subDesc:"Acesso às sessões completas enquanto a assinatura estiver ativa.",
+subDesc:"Acesso total a rotinas guiadas com repetições e controle ativo.",
 btnPay:"💳 Ativar Assinatura Segura",
-legal:"<strong>Aviso Legal e de Responsabilidade:</strong> O AL CIELO é um serviço de bem-estar geral e estilo de vida, não um serviço médico ou de diagnóstico. Cada usuário participa por sua própria discrição e conforto."
+legal:"<strong>Aviso Legal e de Responsabilidade:</strong> O AL CIELO é um serviço de bem-estar geral e estilo de vida. Cada usuário participa por sua própria discrição e conforto."
 }
 };
 
@@ -302,8 +302,8 @@ ultimoTextoGenerado=data.session_content||"";
 box.innerText=ultimoTextoGenerado;
 audioBtn.style.display="block";
 
-// Evaluar el texto generado por la IA de inmediato
-verificarYMostrarCirculo(ultimoTextoGenerado);
+// Análisis estricto previo a la voz: si el texto menciona respiración, inhalar, exhalar, aire, pulmones u oxígeno
+verificarYMostrarCirculoEstricto(ultimoTextoGenerado);
 
 reproducirVozHumana();
 }else if(response.status===403){
@@ -322,13 +322,19 @@ sessionBtn.disabled=false;
 }
 }
 
-function verificarYMostrarCirculo(texto){
+function verificarYMostrarCirculoEstricto(texto){
 const textoMinus = texto.toLowerCase();
-const palabrasClave = ["respir", "inhal", "exhal", "breath", "respiração", "respire", "inhale", "exhale", "oxigen"];
-const esBreathing = palabrasClave.some(p => textoMinus.includes(p));
+// Palabras clave amplias de respiración, inhalación, exhalación, aire y pulmones en varios idiomas
+const palabrasClaveRespiracion = [
+"respir", "inhal", "exhal", "aire", "pulmón", "pulmon", "oxígen", "oxigen",
+"breath", "breathe", "inhale", "exhale", "air", "lungs", "oxygen",
+"respira", "inspire", "expire", "ar", "pulmões", "oxigênio"
+];
 
+const esRespiracion = palabrasClaveRespiracion.some(p => textoMinus.includes(p));
 const container = document.getElementById("breathing-circle-container");
-if(esBreathing){
+
+if(esRespiracion){
 container.style.display = "flex";
 } else {
 container.style.display = "none";
