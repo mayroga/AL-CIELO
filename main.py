@@ -1,417 +1,244 @@
-<!doctype html>
-<html lang="es">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AL CIELO - Bienestar y Movilidad (50+)</title>
-<style>
-*{box-sizing:border-box}
-body{font-family:system-ui,-apple-system,sans-serif;background:#0f172a;color:#f8fafc;margin:0;padding:20px;display:flex;flex-direction:column;align-items:center;min-height:100vh}
-.admin-corner{position:absolute;top:10px;right:15px;font-size:.75rem;color:#334155;cursor:pointer;user-select:none}
-.admin-corner:hover{color:#64748b}
-#hidden-auth-box{display:none;position:absolute;top:35px;right:15px;background:#1e293b;border:1px solid #475569;padding:10px;border-radius:8px;box-shadow:0 4px 12px #0008;z-index:100;width:220px}
-#hidden-auth-box input{width:100%;padding:8px;margin-bottom:7px;background:#0f172a;border:1px solid #334155;color:#fff;border-radius:4px;font-size:.9rem}
-#hidden-auth-box button{width:100%;padding:8px;background:#0284c7;color:#fff;border:0;border-radius:4px;cursor:pointer;font-weight:bold}
-.container{max-width:650px;width:100%;background:#1e293b;padding:30px;border-radius:16px;box-shadow:0 10px 25px #0006;text-align:left;border:1px solid #334155;margin-top:40px;margin-bottom:20px}
-h1{color:#38bdf8;font-size:2.5rem;margin:0 0 5px;text-align:center}
-.subtitle{font-size:1.2rem;color:#94a3b8;margin:0 0 20px;text-align:center;font-weight:bold}
-.info-card{background:#0f172a;border:1px solid #334155;padding:20px;border-radius:10px;margin-bottom:25px}
-.info-card h3{color:#38bdf8;margin-top:0;font-size:1.3rem}
-.info-card p,.info-card li{color:#cbd5e1;font-size:1.05rem;line-height:1.5}
-.info-card ul{margin:10px 0;padding-left:20px}
-.info-card li{margin-bottom:8px}
-.control-group{margin:20px 0}
-label{font-size:1.1rem;font-weight:bold;color:#cbd5e1;display:block;margin-bottom:8px}
-select{font-size:1.1rem;padding:14px;width:100%;border-radius:8px;border:1px solid #475569;background:#0f172a;color:#fff}
-.btn{font-size:1.15rem;padding:16px;width:100%;border-radius:8px;border:0;cursor:pointer;margin-top:15px;font-weight:bold}
-.btn:active{transform:scale(.98)}
-.btn:disabled{opacity:.55;cursor:not-allowed}
-.btn-preview{background:#0284c7;color:#fff}
-.btn-session{background:#0d9488;color:#fff}
-.btn-pay{background:#16a34a;color:#fff}
-.btn-audio{background:#d97706;color:#fff;display:none}
-#output-box{margin-top:25px;background:#0f172a;border:1px solid #334155;padding:20px;border-radius:8px;font-size:1.2rem;line-height:1.6;display:none;max-height:350px;overflow-y:auto;color:#f8fafc;white-space:pre-wrap}
-#payment-status{display:none;margin-top:15px;padding:15px;border-radius:8px;text-align:center;font-weight:bold;line-height:1.5}
-.payment-ok{background:#064e3b;color:#a7f3d0;border:1px solid #10b981}
-.payment-wait{background:#422006;color:#fde68a;border:1px solid #f59e0b}
-.payment-error{background:#450a0a;color:#fecaca;border:1px solid #ef4444}
-.legal-notice{font-size:.85rem;color:#64748b;margin-top:25px;border-top:1px solid #334155;padding-top:15px;line-height:1.4;text-align:center}
-</style>
-</head>
-<body>
+import os
+import sqlite3
+from fastapi import FastAPI,HTTPException,Request,Header
+from fastapi.responses import HTMLResponse,FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+import stripe
+from google import genai
+from google.genai import types
 
-<div class="admin-corner" onclick="toggleAuthBox()">⚙️</div>
+app=FastAPI(title="AL CIELO - Production Engine",version="3.0.1")
+app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_credentials=True,allow_methods=["*"],allow_headers=["*"])
 
-<div id="hidden-auth-box">
-<input type="text" id="accessUser" placeholder="Username" autocomplete="username">
-<input type="password" id="accessPass" placeholder="Password" autocomplete="current-password">
-<button onclick="realizarAccesoCortesia()">Free Access</button>
-</div>
+stripe.api_key=os.getenv("STRIPE_SECRET_KEY")
+STRIPE_PRICE_ID=os.getenv("STRIPE_PRICE_ID")
+STRIPE_WEBHOOK_SECRET=os.getenv("STRIPE_WEBHOOK_SECRET")
+ADMIN_USER=os.getenv("ADMIN_USER") or os.getenv("ADMIN_USERNAME")
+ADMIN_PASS=os.getenv("ADMIN_PASS") or os.getenv("ADMIN_PASSWORD")
+DB_FILE="alcielo_licences.db"
 
-<div class="container">
-<h1 id="t-title">AL CIELO</h1>
-<p id="t-subtitle" class="subtitle">Bienestar, Movilidad y Conexión Diaria (50+)</p>
+def get_db():
+    conn=sqlite3.connect(DB_FILE)
+    conn.row_factory=sqlite3.Row
+    return conn
 
-<div class="info-card">
-<h3 id="t-what-is-title">¿Qué es y para qué sirve AL CIELO?</h3>
-<p id="t-what-is-desc">Sistema de entrenamiento y bienestar integral con rutinas guiadas de repeticiones claras y movilidad adaptada.</p>
+def init_db():
+    conn=get_db()
+    conn.execute("""CREATE TABLE IF NOT EXISTS authorized_devices(
+        device_id TEXT PRIMARY KEY,
+        status TEXT NOT NULL DEFAULT 'active',
+        stripe_customer_id TEXT,
+        stripe_subscription_id TEXT,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""")
+    conn.commit()
+    conn.close()
 
-<h3 id="t-contains-title" style="margin-top:15px">¿Qué contiene el servicio?</h3>
-<ul>
-<li><strong id="t-c1-strong">Movilidad Universal Adaptada:</strong> <span id="t-c1-desc">Ejercicios estructurados con series y repeticiones definidas para encamados, sillas de ruedas o activos.</span></li>
-<li><strong id="t-c2-strong">Doble Accesibilidad (Audio y Texto):</strong> <span id="t-c2-desc">Instrucciones precisas de voz y lectura visual en pantalla.</span></li>
-<li><strong id="t-c3-strong">Sesiones de Entrenamiento Dirigido:</strong> <span id="t-c3-desc">Control exacto del esfuerzo, pausas y repeticiones continuas.</span></li>
-</ul>
-</div>
+def authorize_device(device_id,customer_id=None,subscription_id=None):
+    if not device_id:return
+    conn=get_db()
+    conn.execute("""INSERT INTO authorized_devices
+        (device_id,status,stripe_customer_id,stripe_subscription_id,updated_at)
+        VALUES(?,'active',?,?,CURRENT_TIMESTAMP)
+        ON CONFLICT(device_id) DO UPDATE SET
+        status='active',
+        stripe_customer_id=excluded.stripe_customer_id,
+        stripe_subscription_id=excluded.stripe_subscription_id,
+        updated_at=CURRENT_TIMESTAMP""",(device_id,customer_id,subscription_id))
+    conn.commit()
+    conn.close()
 
-<div class="control-group">
-<label id="t-lang-label" for="languageSelect">Seleccione su Idioma / Select Language:</label>
-<select id="languageSelect" onchange="cambiarIdiomaPantalla()">
-<option value="es">Español</option>
-<option value="en">English</option>
-<option value="pt">Português</option>
-</select>
+def check_device_authorization(device_id):
+    if not device_id:return False
+    conn=get_db()
+    row=conn.execute("SELECT status FROM authorized_devices WHERE device_id=?",(device_id,)).fetchone()
+    conn.close()
+    return bool(row and row["status"]=="active")
 
-<button id="btn-prev" class="btn btn-preview" onclick="obtenerContenido(true)">▶️ Ver y Escuchar Muestra Gratuita (30 Segundos)</button>
-<button id="btn-sess" class="btn btn-session" onclick="obtenerContenido(false)">🔊 Iniciar Sesión Completa de Bienestar</button>
-<button id="audioControlBtn" class="btn btn-audio" onclick="reproducirVozHumana()">🗣️ Volver a escuchar en voz alta</button>
-</div>
+def deactivate_device_by_subscription(subscription_id):
+    if not subscription_id:return
+    conn=get_db()
+    conn.execute("UPDATE authorized_devices SET status='inactive',updated_at=CURRENT_TIMESTAMP WHERE stripe_subscription_id=?",(subscription_id,))
+    conn.commit()
+    conn.close()
 
-<div class="control-group" style="background:#111827;padding:15px;border-radius:8px;text-align:center;border:1px dashed #374151">
-<label id="t-sub-title" style="color:#4ade80;font-size:1.1rem;margin-bottom:5px">Suscripción ($15.99 / mes)</label>
-<p id="t-sub-desc" style="font-size:.95rem;color:#9ca3af;margin:5px 0 15px">Acceso total a rutinas guiadas con repeticiones y control activo.</p>
-<button id="btn-pay-text" class="btn btn-pay" onclick="iniciarPagoStripe()">💳 Activar Suscripción Segura</button>
-<div id="payment-status"></div>
-</div>
+init_db()
 
-<div id="output-box"></div>
+try:
+    gemini_client=genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+except Exception:
+    gemini_client=None
 
-<div id="t-legal" class="legal-notice">
-<strong>Aviso Legal y de Responsabilidad:</strong> AL CIELO es un servicio de bienestar general y estilo de vida. Cada usuario participa bajo su propia discreción y comodidad personal.
-</div>
-</div>
+SYSTEM_WELLNESS_PROMPT="""
+You are the exclusive wellness advisor for the platform "AL CIELO", designed for adults aged 50 and over.
+Your instructions must be direct, extremely concise, warm, and highly effective. The user listens via voice.
 
-<script>
-let ultimoTextoGenerado="";
-let deviceId=null;
+ABSOLUTE RULES:
+1. LEGAL SAFETY BLOCK: Every session strictly starts by stating that this is a general wellness service, not medical advice, and that each person participates at their own discretion and comfort.
+2. DIRECT INSTRUCTION FORMAT: Short, clear movements or breathing steps suitable for active people, wheelchair users, or bedridden individuals.
+3. Zero medical jargon. Speak as a lifestyle and wellness specialist.
+"""
 
-const traducciones={
-es:{
-subtitle:"Bienestar, Movilidad y Conexión Diaria (50+)",
-whatIsTitle:"¿Qué es y para qué sirve AL CIELO?",
-whatIsDesc:"Sistema de entrenamiento y bienestar integral con rutinas guiadas de repeticiones claras y movilidad adaptada.",
-containsTitle:"¿Qué contiene el servicio?",
-c1Strong:"Movilidad Universal Adaptada:",
-c1Desc:"Ejercicios estructurados con series y repeticiones definidas para encamados, sillas de ruedas o activos.",
-c2Strong:"Doble Accesibilidad (Audio y Texto):",
-c2Desc:"Instrucciones precisas de voz y lectura visual en pantalla.",
-c3Strong:"Sesiones de Entrenamiento Dirigido:",
-c3Desc:"Control exacto del esfuerzo, pausas y repeticiones continuas.",
-langLabel:"Seleccione su Idioma / Select Language:",
-btnPrev:"▶️ Ver y Escuchar Muestra Gratuita (30 Segundos)",
-btnSess:"🔊 Iniciar Sesión Completa de Bienestar",
-audioBtn:"🗣️ Volver a escuchar en voz alta",
-subTitle:"Suscripción ($15.99 / mes)",
-subDesc:"Acceso total a rutinas guiadas con repeticiones y control activo.",
-btnPay:"💳 Activar Suscripción Segura",
-legal:"<strong>Aviso Legal y de Responsabilidad:</strong> AL CIELO es un servicio de bienestar general y estilo de vida. Cada usuario participa bajo su propia discreción y comodidad personal."
-},
-en:{
-subtitle:"Wellness, Mobility and Daily Connection (50+)",
-whatIsTitle:"What is AL CIELO and what is it for?",
-whatIsDesc:"Comprehensive wellness and training system with clear repetition guidelines and adapted mobility.",
-containsTitle:"What does the service include?",
-c1Strong:"Adapted Universal Mobility:",
-c1Desc:"Structured exercises with defined series and repetitions for bedridden, wheelchair users, or active individuals.",
-c2Strong:"Dual Accessibility (Audio and Visual Text):",
-c2Desc:"Precise voice instructions and visual reading on screen.",
-c3Strong:"Directed Training Sessions:",
-c3Desc:"Exact control of effort, pauses, and continuous repetitions.",
-langLabel:"Select Language:",
-btnPrev:"▶️ View & Listen Free Preview (30 Seconds)",
-btnSess:"🔊 Start Full Wellness Session",
-audioBtn:"🗣️ Listen aloud again",
-subTitle:"Subscription ($15.99 / month)",
-subDesc:"Full access to guided routines with repetitions and active control.",
-btnPay:"💳 Activate Secure Subscription",
-legal:"<strong>Legal Notice and Disclaimer:</strong> AL CIELO is a general wellness and lifestyle service. Each user participates at their own discretion and comfort."
-},
-pt:{
-subtitle:"Bem-estar, Mobilidade e Conexão Diária (50+)",
-whatIsTitle:"O que é e para que serve o AL CIELO?",
-whatIsDesc:"Sistema de treinamento e bem-estar integral com rotinas guiadas de repetições claras e mobilidade adaptada.",
-containsTitle:"O que o serviço contém?",
-c1Strong:"Mobilidade Universal Adaptada:",
-c1Desc:"Exercícios estruturados com séries e repetições definidas para acamados, cadeirantes ou ativos.",
-c2Strong:"Dupla Acessibilidade (Áudio e Texto):",
-c2Desc:"Instrucciones precisas de voz e leitura visual na tela.",
-c3Strong:"Sessões de Treinamento Dirigido:",
-c3Desc:"Controle exato do esforço, pausas e repetições contínuas.",
-langLabel:"Selecione o Idioma:",
-btnPrev:"▶️ Ver e Ouvir Amostra Gratuita (30 Segundos)",
-btnSess:"🔊 Iniciar Sesión Completa de Bem-estar",
-audioBtn:"🗣️ Ouvir em voz alta novamente",
-subTitle:"Assinatura ($15.99 / mês)",
-subDesc:"Acesso total a rotinas guiadas com repetições e controle ativo.",
-btnPay:"💳 Ativar Assinatura Segura",
-legal:"<strong>Aviso Legal e de Responsabilidade:</strong> O AL CIELO é um serviço de bem-estar geral e estilo de vida. Cada usuário participa por sua própria discrição e conforto."
-}
-};
+@app.get("/",response_class=FileResponse)
+async def serve_frontend():
+    return "index.html"
 
-function getDeviceId(){
-if(deviceId)return deviceId;
-deviceId=localStorage.getItem("al_cielo_device_id");
-if(!deviceId){
-deviceId="device-"+crypto.randomUUID();
-localStorage.setItem("al_cielo_device_id",deviceId);
-}
-return deviceId;
-}
+@app.post("/api/v1/authorize-courtesy")
+async def authorize_courtesy(request:Request):
+    body=await request.json()
+    username=body.get("username","").strip()
+    password=body.get("password","").strip()
+    device_id=body.get("device_id","").strip()
+    if not ADMIN_USER or not ADMIN_PASS:
+        raise HTTPException(status_code=500,detail="Admin credentials not configured in Render environment variables.")
+    if username==ADMIN_USER and password==ADMIN_PASS and device_id:
+        authorize_device(device_id)
+        return {"status":"success"}
+    raise HTTPException(status_code=401,detail="Invalid credentials.")
 
-function cambiarIdiomaPantalla(){
-const lang=document.getElementById("languageSelect").value;
-const t=traducciones[lang];
-document.getElementById("t-subtitle").innerText=t.subtitle;
-document.getElementById("t-what-is-title").innerText=t.whatIsTitle;
-document.getElementById("t-what-is-desc").innerText=t.whatIsDesc;
-document.getElementById("t-contains-title").innerText=t.containsTitle;
-document.getElementById("t-c1-strong").innerText=t.c1Strong;
-document.getElementById("t-c1-desc").innerText=t.c1Desc;
-document.getElementById("t-c2-strong").innerText=t.c2Strong;
-document.getElementById("t-c2-desc").innerText=t.c2Desc;
-document.getElementById("t-c3-strong").innerText=t.c3Strong;
-document.getElementById("t-c3-desc").innerText=t.c3Desc;
-document.getElementById("t-lang-label").innerText=t.langLabel;
-document.getElementById("btn-prev").innerText=t.btnPrev;
-document.getElementById("btn-sess").innerText=t.btnSess;
-document.getElementById("audioControlBtn").innerText=t.audioBtn;
-document.getElementById("t-sub-title").innerText=t.subTitle;
-document.getElementById("t-sub-desc").innerText=t.subDesc;
-document.getElementById("btn-pay-text").innerText=t.btnPay;
-document.getElementById("t-legal").innerHTML=t.legal;
-}
+@app.post("/api/v1/create-checkout-session")
+async def create_checkout_session(request:Request):
+    try:
+        body=await request.json()
+        device_id=str(body.get("device_id","")).strip()
+        if not device_id:
+            raise HTTPException(status_code=400,detail="Device ID required.")
+        if not stripe.api_key:
+            raise HTTPException(status_code=500,detail="STRIPE_SECRET_KEY is missing in Render.")
+        if not STRIPE_PRICE_ID:
+            raise HTTPException(status_code=500,detail="STRIPE_PRICE_ID is missing in Render.")
+        host=request.headers.get("host") or "al-cielo.onrender.com"
+        base_url=f"https://{host}"
+        checkout_session=stripe.checkout.Session.create(
+            line_items=[{"price":STRIPE_PRICE_ID,"quantity":1}],
+            mode="subscription",
+            success_url=f"{base_url}/success?session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{base_url}/cancel",
+            metadata={"device_id":device_id}
+        )
+        return {"status":"success","checkout_url":checkout_session.url}
+    except HTTPException:
+        raise
+    except stripe.error.StripeError as e:
+        raise HTTPException(status_code=502,detail=f"Stripe error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500,detail=f"Checkout error: {str(e)}")
 
-function toggleAuthBox(){
-const box=document.getElementById("hidden-auth-box");
-box.style.display=box.style.display==="block"?"none":"block";
-}
+@app.post("/webhook/stripe")
+async def stripe_webhook(request:Request,stripe_signature:str=Header(default=None)):
+    payload=await request.body()
+    if not STRIPE_WEBHOOK_SECRET:
+        raise HTTPException(status_code=500,detail="STRIPE_WEBHOOK_SECRET is missing in Render.")
+    if not stripe_signature:
+        raise HTTPException(status_code=400,detail="Missing Stripe-Signature header.")
+    try:
+        event=stripe.Webhook.construct_event(payload,stripe_signature,STRIPE_WEBHOOK_SECRET)
+    except ValueError:
+        raise HTTPException(status_code=400,detail="Invalid webhook payload.")
+    except stripe.error.SignatureVerificationError:
+        raise HTTPException(status_code=400,detail="Invalid Stripe webhook signature.")
+    except Exception as e:
+        raise HTTPException(status_code=400,detail=f"Webhook error: {str(e)}")
 
-async function realizarAccesoCortesia(){
-const u=document.getElementById("accessUser").value.trim();
-const p=document.getElementById("accessPass").value.trim();
+    event_type=event.get("type")
 
-if(!u||!p){
-alert("Enter username and password.");
-return;
-}
+    if event_type=="checkout.session.completed":
+        session=event["data"]["object"]
+        metadata=session.get("metadata") or {}
+        device_id=metadata.get("device_id")
+        customer_id=session.get("customer")
+        subscription_id=session.get("subscription")
+        if device_id:
+            authorize_device(device_id,customer_id,subscription_id)
 
-try{
-const response=await fetch("/api/v1/authorize-courtesy",{
-method:"POST",
-headers:{"Content-Type":"application/json"},
-body:JSON.stringify({
-username:u,
-password:p,
-device_id:getDeviceId()
-})
-});
+    elif event_type in ("customer.subscription.deleted","customer.subscription.unpaid"):
+        subscription=event["data"]["object"]
+        deactivate_device_by_subscription(subscription.get("id"))
 
-const data=await response.json().catch(()=>({}));
+    return {"status":"success"}
 
-if(response.ok){
-alert("Access granted successfully.");
-document.getElementById("hidden-auth-box").style.display="none";
-}else{
-alert(data.detail||"Incorrect credentials.");
-}
-}catch(err){
-alert("Connection error: "+err.message);
-}
-}
+@app.get("/success",response_class=HTMLResponse)
+async def payment_success(session_id:str=None):
+    verified=False
+    if session_id:
+        try:
+            session=stripe.checkout.Session.retrieve(session_id)
+            if session.get("payment_status")=="paid":
+                verified=True
+        except Exception:
+            verified=False
 
-async function obtenerContenido(isHook){
-const lang=document.getElementById("languageSelect").value;
-const box=document.getElementById("output-box");
-const audioBtn=document.getElementById("audioControlBtn");
-const sessionBtn=document.getElementById("btn-sess");
+    if verified:
+        return """<html><body style="background:#0f172a;color:white;text-align:center;padding-top:60px;font-family:sans-serif;">
+        <h1 style="color:#4ade80;">Payment Received</h1>
+        <p>Stripe received your payment.</p>
+        <p>Your access will be activated after Stripe confirms the subscription.</p>
+        <a href="/" style="display:inline-block;margin-top:20px;padding:12px 24px;background:#0284c7;color:white;text-decoration:none;border-radius:8px;font-weight:bold;">Return to AL CIELO</a>
+        </body></html>"""
 
-box.style.display="block";
-audioBtn.style.display="none";
+    return """<html><body style="background:#0f172a;color:white;text-align:center;padding-top:60px;font-family:sans-serif;">
+    <h1 style="color:#f87171;">Payment Not Confirmed</h1>
+    <p>We could not verify the payment with Stripe.</p>
+    <a href="/" style="display:inline-block;margin-top:20px;padding:12px 24px;background:#0284c7;color:white;text-decoration:none;border-radius:8px;font-weight:bold;">Return to AL CIELO</a>
+    </body></html>"""
 
-if(isHook){
-box.innerText=lang==="es"?"Preparando su muestra gratuita...":lang==="pt"?"Preparando sua amostra gratuita...":"Preparing your free preview...";
-}else{
-box.innerText=lang==="es"?"Verificando su acceso...":lang==="pt"?"Verificando seu acesso...":"Checking your access...";
-sessionBtn.disabled=true;
-}
+@app.get("/cancel",response_class=HTMLResponse)
+async def payment_cancel():
+    return """<html><body style="background:#0f172a;color:white;text-align:center;padding-top:60px;font-family:sans-serif;">
+    <h1 style="color:#f87171;">Payment Canceled</h1>
+    <p>No subscription was activated.</p>
+    <a href="/" style="display:inline-block;margin-top:20px;padding:12px 24px;background:#0284c7;color:white;text-decoration:none;border-radius:8px;font-weight:bold;">Return Home</a>
+    </body></html>"""
 
-try{
-const response=await fetch("/api/v1/generate-session",{
-method:"POST",
-headers:{"Content-Type":"application/json"},
-body:JSON.stringify({
-device_id:getDeviceId(),
-language:lang,
-is_hook:isHook
-})
-});
+@app.post("/api/v1/generate-session")
+async def generate_session(request:Request):
+    try:
+        body=await request.json()
+        device_id=str(body.get("device_id","")).strip()
+        language=body.get("language","es")
+        is_hook=bool(body.get("is_hook",False))
+        if not device_id:
+            raise HTTPException(status_code=400,detail="Device ID required.")
+        if not is_hook and not check_device_authorization(device_id):
+            raise HTTPException(status_code=403,detail="Subscription required.")
 
-const data=await response.json().catch(()=>({}));
+        duration_desc="30-second free preview" if is_hook else "full 10-minute guided wellness session"
+        lang_names={"es":"Spanish","en":"English","pt":"Portuguese"}
+        selected_lang_name=lang_names.get(language,"Spanish")
+        prompt=f"""
+Generate a [{duration_desc}] strictly in [{selected_lang_name}]
+for adults aged 50 and over.
+Direct, warm, human instructions focusing on gentle mobility and breathing.
+CRITICAL:
+Output ONLY plain conversational sentences in {selected_lang_name}.
+Do NOT mix languages.
+Do NOT include any intro text.
+"""
+        response_text=""
+        if gemini_client:
+            try:
+                response=gemini_client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM_WELLNESS_PROMPT,
+                        temperature=0.6
+                    )
+                )
+                response_text=response.text or ""
+            except Exception:
+                response_text=""
 
-if(response.ok){
-ultimoTextoGenerado=data.session_content||"";
-box.innerText=ultimoTextoGenerado;
-audioBtn.style.display="block";
+        if not response_text:
+            if language=="en":
+                response_text="Welcome to AL CIELO. This session is for general well-being. Please take a comfortable posture. Inhale deeply through your nose, and exhale slowly through your mouth. Gently move your toes and ankles, feeling a soft, natural circulation."
+            elif language=="pt":
+                response_text="Bem-vindo ao AL CIELO. Esta sessão é para o seu bem-estar geral. Por favor, adote uma postura confortável. Inspire profundamente pelo nariz e expire devagar pela boca."
+            else:
+                response_text="Bienvenido a AL CIELO. Esta sesión es de bienestar general. Tome una postura cómoda. Inhale profundamente por la nariz y exhale despacio por la boca."
 
-reproducirVozHumana();
-}else if(response.status===403){
-box.innerText=lang==="es"
-?"Este dispositivo no tiene una suscripción activa. Active la suscripción de $15.99 para iniciar la sesión completa."
-:lang==="pt"
-?"Este dispositivo não possui uma assinatura ativa. Ative a assinatura de $15.99 para iniciar a sessão completa."
-:"This device does not have an active subscription. Activate the $15.99 subscription to start the full session.";
-}else{
-box.innerText=(data.detail||"Error del servidor.");
-}
-}catch(err){
-box.innerText="Error de conexión: "+err.message;
-}finally{
-sessionBtn.disabled=false;
-}
-}
-
-function reproducirVozHumana(){
-if(!ultimoTextoGenerado)return;
-if(!("speechSynthesis" in window))return;
-
-window.speechSynthesis.cancel();
-
-const textoLimpio=ultimoTextoGenerado
-.replace(/[*#_\[\]{}()"`]/g,"")
-.replace(/[-–—]/g," ")
-.replace(/[\n\r]+/g,". ");
-
-const utterance=new SpeechSynthesisUtterance(textoLimpio);
-const lang=document.getElementById("languageSelect").value;
-utterance.lang=lang==="es"?"es-ES":lang==="pt"?"pt-PT":"en-US";
-utterance.rate=.85;
-utterance.pitch=1;
-
-window.speechSynthesis.speak(utterance);
-}
-
-function mostrarEstadoPago(tipo,mensaje){
-const box=document.getElementById("payment-status");
-box.style.display="block";
-box.className=tipo==="ok"?"payment-ok":tipo==="wait"?"payment-wait":"payment-error";
-box.innerText=mensaje;
-}
-
-async function iniciarPagoStripe(){
-const btn=document.getElementById("btn-pay-text");
-const lang=document.getElementById("languageSelect").value;
-
-btn.disabled=true;
-
-mostrarEstadoPago(
-"wait",
-lang==="es"?"Conectando con Stripe...":
-lang==="pt"?"Conectando ao Stripe...":
-"Connecting to Stripe..."
-);
-
-try{
-const response=await fetch("/api/v1/create-checkout-session",{
-method:"POST",
-headers:{"Content-Type":"application/json"},
-body:JSON.stringify({device_id:getDeviceId()})
-});
-
-const data=await response.json().catch(()=>({}));
-
-if(response.ok&&data.checkout_url){
-mostrarEstadoPago(
-"wait",
-lang==="es"?"Abriendo el pago seguro de Stripe...":
-lang==="pt"?"Abrindo o pagamento seguro do Stripe...":
-"Opening secure Stripe checkout..."
-);
-window.location.href=data.checkout_url;
-return;
-}
-
-const detail=data.detail||"Stripe no pudo crear la sesión de pago.";
-mostrarEstadoPago("error",detail);
-alert(detail);
-
-}catch(err){
-const msg="Error de conexión con el servidor de pago: "+err.message;
-mostrarEstadoPago("error",msg);
-alert(msg);
-}finally{
-btn.disabled=false;
-}
-}
-
-async function comprobarRegresoDeStripe(){
-const params=new URLSearchParams(window.location.search);
-const sessionId=params.get("session_id");
-
-if(!sessionId)return;
-
-const lang=document.getElementById("languageSelect").value;
-
-mostrarEstadoPago(
-"wait",
-lang==="es"?"Stripe recibió el pago. Confirmando la activación...":
-lang==="pt"?"O Stripe recebeu o pagamento. Confirmando a ativação...":
-"Stripe received the payment. Confirming activation..."
-);
-
-setTimeout(async()=>{
-try{
-const response=await fetch("/api/v1/generate-session",{
-method:"POST",
-headers:{"Content-Type":"application/json"},
-body:JSON.stringify({
-device_id:getDeviceId(),
-language:lang,
-is_hook:false
-})
-});
-
-if(response.ok){
-mostrarEstadoPago(
-"ok",
-lang==="es"?"Suscripción activa. Su dispositivo ya tiene acceso a las sesiones completas.":
-lang==="pt"?"Assinatura ativa. Seu dispositivo já tem acesso às sessões completas.":
-"Subscription active. Your device now has access to full sessions."
-);
-}else{
-mostrarEstadoPago(
-"wait",
-lang==="es"
-?"El pago fue recibido. Stripe todavía está confirmando la suscripción. Espere unos segundos y vuelva a intentar la sesión."
-:lang="pt"
-?"O pagamento foi recebido. O Stripe ainda está confirmando a assinatura. Aguarde alguns segundos e tente a sessão novamente."
-:"Payment was received. Stripe is still confirming the subscription. Wait a few seconds and try the session again."
-);
-}
-}catch(err){
-mostrarEstadoPago(
-"error",
-lang==="es"?"No pudimos comprobar la activación todavía.":
-lang==="pt"?"Ainda não foi possível verificar a ativação.":
-"We could not verify activation yet."
-);
-}
-},1500);
-}
-
-document.addEventListener("DOMContentLoaded",()=>{
-getDeviceId();
-comprobarRegresoDeStripe();
-});
-</script>
-</body>
-</html>
+        return {"status":"success","session_content":response_text}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500,detail=str(e))
