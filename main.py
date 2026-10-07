@@ -1,6 +1,5 @@
 import os
 import sqlite3
-import random
 from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,8 +7,14 @@ import stripe
 from google import genai
 from google.genai import types
 
-app = FastAPI(title="AL CIELO - Production Engine", version="3.0.5")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app = FastAPI(title="AL CIELO - Production Engine", version="3.0.2")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID")
@@ -70,22 +75,15 @@ try:
 except Exception:
     gemini_client = None
 
-SYSTEM_HOOK_PROMPT = """
-You are the exclusive wellness advisor for the platform "AL CIELO".
-Your task is to generate a short, engaging 30-second free preview summary so the user quickly understands what the service offers.
-Start with the mandatory legal disclaimer: this is a general wellness and lifestyle service, not a medical service, and participation is at one's own discretion and comfort.
-Keep it concise, warm, and welcoming.
-"""
+SYSTEM_WELLNESS_PROMPT = """
+You are the exclusive wellness advisor for the platform "AL CIELO", designed for adults aged 50 and over.
+Your instructions must be direct, extremely concise, warm, and highly effective. The user listens via voice.
 
-SYSTEM_SESSION_PROMPT = """
-You are the exclusive wellness and lifestyle specialist for the platform "AL CIELO", designed comprehensively for adults aged 50 and over. Your sessions are structured to guide a full 10-minute wellness and mobility experience.
-
-CORE RULES & REQUIREMENTS:
-1. LEGAL SAFETY BLOCK: Every session strictly starts by stating clearly that this is a general wellness and lifestyle service, not a medical or diagnostic service, and that each person participates at their own personal discretion and comfort.
-2. UNIVERSAL INCLUSIVITY & ADAPTATION: You must design and guide the session so it accommodates all real-life conditions of adults 50+, including active individuals, people in wheelchairs, bedridden/encamados individuals, and those with the partial or complete absence of one, two, or multiple limbs. Offer smooth, respectful alternative options for every movement.
-3. ABSOLUTE UNIQUENESS & VARIATION: NEVER repeat the exact same exercise routine or sequence. Each generated session must feature completely fresh, unique, and varied movements, stretches, and breathing patterns (similar concepts are fine, but the execution and combination must always be entirely distinct).
-4. COMPREHENSIVE LENGTH & PACING: Provide rich, detailed session content designed to unfold progressively over the full duration, ensuring deep coverage of breathing, gentle stretching, circulation, and relaxation with natural human pacing and pauses.
-5. EXERCISE FOCUS: When instructing a repetition, stay fully focused on that movement until completed before transitioning. Zero medical jargon.
+ABSOLUTE RULES:
+1. LEGAL SAFETY BLOCK: Every session strictly starts by stating that this is a general wellness service, not medical advice, and that each person participates at their own discretion and comfort.
+2. DURATION & REPETITIONS: For full sessions, explicitly structure exercises with clear repetitions (repeat 2 to 3 times) and paced breathing phases so the entire routine spans a full, calming duration suitable for daily well-being.
+3. BREATHING SECTIONS: Clearly indicate when breathing phases occur, describing their gentle health benefits (e.g., calming the nervous system, improving oxygen flow) so the visual breathing guide synchronizes perfectly.
+4. Zero medical jargon. Speak as a lifestyle and wellness specialist.
 """
 
 @app.get("/", response_class=FileResponse)
@@ -150,7 +148,6 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(defaul
         raise HTTPException(status_code=400, detail=f"Webhook error: {str(e)}")
 
     event_type = event.get("type")
-
     if event_type == "checkout.session.completed":
         session = event["data"]["object"]
         metadata = session.get("metadata") or {}
@@ -159,7 +156,6 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(defaul
         subscription_id = session.get("subscription")
         if device_id:
             authorize_device(device_id, customer_id, subscription_id)
-
     elif event_type in ("customer.subscription.deleted", "customer.subscription.unpaid"):
         subscription = event["data"]["object"]
         deactivate_device_by_subscription(subscription.get("id"))
@@ -211,28 +207,18 @@ async def generate_session(request: Request):
         if not is_hook and not check_device_authorization(device_id):
             raise HTTPException(status_code=403, detail="Subscription required.")
 
+        duration_desc = "30-second free preview" if is_hook else "full 10-minute guided wellness session structured with repetition cycles (repeat 2 to 3 times) and dedicated breathing phases with benefits"
         lang_names = {"es": "Spanish", "en": "English", "pt": "Portuguese"}
         selected_lang_name = lang_names.get(language, "Spanish")
-        random_seed = random.randint(1000, 999999)
-
-        if is_hook:
-            prompt = f"""
-Generate a brief 30-second free preview summary strictly in [{selected_lang_name}] explaining what AL CIELO offers.
-CRITICAL: Output ONLY plain conversational sentences in {selected_lang_name}. Do NOT mix languages. Do NOT include any intro text.
+        prompt = f"""
+Generate a [{duration_desc}] strictly in [{selected_lang_name}]
+for adults aged 50 and over.
+Direct, warm, human instructions focusing on gentle mobility and breathing.
+CRITICAL:
+Output ONLY plain conversational sentences in {selected_lang_name}.
+Do NOT mix languages.
+Do NOT include any intro text.
 """
-            system_inst = SYSTEM_HOOK_PROMPT
-        else:
-            prompt = f"""
-Generate a comprehensive, full 10-minute guided wellness and mobility session (Session ID seed: {random_seed}) strictly in [{selected_lang_name}]
-designed specifically for adults aged 50 and over.
-CRITICAL REQUIREMENTS:
-- Accommodate all real-life physical conditions: active participants, wheelchair users, bedridden/encamados individuals, and those with partial or complete absence of limbs.
-- Ensure the routine is completely unique, fresh, and different from standard sequences (seed {random_seed}).
-- Include natural human pauses, pacing, and detailed progressions.
-- Output ONLY plain conversational sentences in {selected_lang_name}. Do NOT mix languages. Do NOT include any intro text.
-"""
-            system_inst = SYSTEM_SESSION_PROMPT
-
         response_text = ""
         if gemini_client:
             try:
@@ -240,8 +226,8 @@ CRITICAL REQUIREMENTS:
                     model="gemini-2.5-flash",
                     contents=prompt,
                     config=types.GenerateContentConfig(
-                        system_instruction=system_inst,
-                        temperature=0.85
+                        system_instruction=SYSTEM_WELLNESS_PROMPT,
+                        temperature=0.6
                     )
                 )
                 response_text = response.text or ""
@@ -249,20 +235,12 @@ CRITICAL REQUIREMENTS:
                 response_text = ""
 
         if not response_text:
-            if is_hook:
-                if language == "en":
-                    response_text = "Welcome to AL CIELO free preview. This is a general wellness service for your personal comfort. Experience our guided mobility and breathing sessions designed for adults 50 and over."
-                elif language == "pt":
-                    response_text = "Bem-vindo à amostra gratuita do AL CIELO. Este é um serviço de bem-estar geral para o seu conforto pessoal. Conheça nossas sessões guiadas de mobilidade."
-                else:
-                    response_text = "Bienvenido a la muestra gratuita de AL CIELO. Este es un servicio de bienestar general bajo su propio criterio. Conozca nuestras sesiones de movilidad y respiración."
+            if language == "en":
+                response_text = "Welcome to AL CIELO. This session is for general well-being. Please take a comfortable posture. Inhale deeply through your nose, and exhale slowly through your mouth, repeating this cycle 3 times to calm your nervous system and oxygenate your body. Gently move your toes and ankles, repeating 3 times to stimulate circulation."
+            elif language == "pt":
+                response_text = "Bem-vindo ao AL CIELO. Esta sessão é para o seu bem-estar geral. Por favor, adote uma postura confortável. Inspire profundamente pelo nariz e expire devagar pela boca, repetindo este ciclo 3 vezes para acalmar o sistema nervoso. Mova suavemente os dedos dos pés e tornozelos, repetindo 3 vezes."
             else:
-                if language == "en":
-                    response_text = "Welcome to your full AL CIELO wellness session. This is a general lifestyle service for your personal comfort, performed at your own discretion. Adapting to every reality—whether active, seated, or resting in bed, and accommodating any variation in physical limbs—let us begin our unique routine. Take a comfortable posture. Inhale deeply through your nose, expanding gently, and exhale slowly through your mouth. Let us repeat this calming breath with complete tranquility, taking all the time you need. Now, let us focus on a fresh sequence of gentle joint mobility and circulation exercises tailored for today."
-                elif language == "pt":
-                    response_text = "Bem-vindo à sua sessão completa do AL CIELO. Este é um serviço de estilo de vida para o seu conforto pessoal. Adaptando-nos a todas as realidades, seja ativo, em cadeira de rodas ou acamado, e contemplando qualquer condição física, vamos iniciar nossa rotina exclusiva de hoje. Adote uma postura confortável. Inspire profundamente pelo nariz e expire lentamente pela boca. Vamos repetir esta respiração calmante com total tranquilidade. Agora, focaremos em uma sequência inédita de mobilidade e circulação."
-                else:
-                    response_text = "Bienvenido a su sesión completa de bienestar en AL CIELO. Este es un servicio de bienestar general y estilo de vida; cada participante lo realiza bajo su propia comodidad y criterio personal. Adaptándonos a cada realidad, ya sea que se encuentre activo, en silla de ruedas o en cama, y contemplando cualquier condición de movilidad o extremidades, comencemos nuestra rutina exclusiva de hoy. Tome una postura cómoda. Inhale profundamente por la nariz y exhale despacio por la boca. Repitamos esta respiración profunda una vez más con absoluta calma. Ahora, enfocaremos nuestra atención en una serie completamente nueva y variada de movimientos suaves para activar la circulación y el bienestar."
+                response_text = "Bienvenido a AL CIELO. Esta sesión es de bienestar general. Tome una postura cómoda. Inhale profundamente por la nariz y expire despacio por la boca, repitiendo este ciclo 3 veces para calmar el sistema nervioso y oxigenar su cuerpo. Mueva suavemente los dedos de los pies y los tobillos, repitiendo este proceso 3 veces."
 
         return {"status": "success", "session_content": response_text}
     except HTTPException:
