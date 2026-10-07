@@ -8,13 +8,7 @@ from google import genai
 from google.genai import types
 
 app = FastAPI(title="AL CIELO - Production Engine", version="3.0.3")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"]
-)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID")
@@ -81,9 +75,10 @@ Your instructions must be direct, extremely concise, warm, and highly effective.
 
 ABSOLUTE RULES:
 1. LEGAL SAFETY BLOCK: Every session strictly starts by stating that this is a general wellness service, not medical advice, and that each person participates at their own discretion and comfort.
-2. DURATION, REPETITIONS & PACED PAUSES: For full sessions, explicitly structure exercises with clear repetitions (repeat 2 to 3 times) and integrated PAUSES (instructing a calm waiting period or pause of approximately 15 seconds between exercises and repetitions) so the entire routine spans a proper calming rhythm suitable for daily well-being.
-3. BREATHING SECTIONS: Clearly indicate when breathing phases occur, describing their gentle health benefits (e.g., calming the nervous system, improving oxygen flow) so the visual breathing guide synchronizes perfectly.
-4. Zero medical jargon. Speak as a lifestyle and wellness specialist.
+2. NATURAL HUMAN RHYTHM & PACING: Write in a natural, conversational, and coaching tone. Use smooth transitional sentences that give the user physical time and calm space between movements.
+3. EXERCISE FOCUS & REPETITION RULE: When you instruct the user to repeat an exercise, stay entirely on that same exercise. Do not introduce a new movement or change the subject. Guide them to perform the repetition calmly and give them space to finish it before moving forward.
+4. DIRECT INSTRUCTION FORMAT: Short, clear movements or breathing steps suitable for active people, wheelchair users, or bedridden individuals.
+5. Zero medical jargon. Speak as a lifestyle and wellness specialist.
 """
 
 @app.get("/", response_class=FileResponse)
@@ -148,6 +143,7 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(defaul
         raise HTTPException(status_code=400, detail=f"Webhook error: {str(e)}")
 
     event_type = event.get("type")
+
     if event_type == "checkout.session.completed":
         session = event["data"]["object"]
         metadata = session.get("metadata") or {}
@@ -156,6 +152,7 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(defaul
         subscription_id = session.get("subscription")
         if device_id:
             authorize_device(device_id, customer_id, subscription_id)
+
     elif event_type in ("customer.subscription.deleted", "customer.subscription.unpaid"):
         subscription = event["data"]["object"]
         deactivate_device_by_subscription(subscription.get("id"))
@@ -207,13 +204,13 @@ async def generate_session(request: Request):
         if not is_hook and not check_device_authorization(device_id):
             raise HTTPException(status_code=403, detail="Subscription required.")
 
-        duration_desc = "30-second free preview" if is_hook else "full 10-minute guided wellness session structured with repetition cycles (repeat 2 to 3 times), explicit 15-second pacing pauses between movements, and dedicated breathing phases with benefits"
+        duration_desc = "30-second free preview" if is_hook else "full 10-minute guided wellness session"
         lang_names = {"es": "Spanish", "en": "English", "pt": "Portuguese"}
         selected_lang_name = lang_names.get(language, "Spanish")
         prompt = f"""
 Generate a [{duration_desc}] strictly in [{selected_lang_name}]
 for adults aged 50 and over.
-Direct, warm, human instructions focusing on gentle mobility, breathing, and explicit pauses.
+Direct, warm, human instructions focusing on gentle mobility and breathing. If an exercise is to be repeated, stay completely focused on that same exercise, giving the user calm space and time to perform the repetition before proceeding.
 CRITICAL:
 Output ONLY plain conversational sentences in {selected_lang_name}.
 Do NOT mix languages.
@@ -236,11 +233,11 @@ Do NOT include any intro text.
 
         if not response_text:
             if language == "en":
-                response_text = "Welcome to AL CIELO. This session is for general well-being. Please take a comfortable posture. Inhale deeply through your nose, and exhale slowly through your mouth, repeating this cycle 3 times to calm your nervous system. [Pause 15 seconds]. Gently move your toes and ankles, repeating 3 times to stimulate circulation. [Pause 15 seconds]."
+                response_text = "Welcome to AL CIELO. This session is for general well-being. Please take a comfortable posture. Inhale deeply through your nose, and exhale slowly through your mouth. Let's repeat this calm breathing once more, taking your time to feel the air flow completely."
             elif language == "pt":
-                response_text = "Bem-vindo ao AL CIELO. Esta sessão é para o seu bem-estar geral. Por favor, adote uma postura confortável. Inspire profundamente pelo nariz e expire devagar pela boca, repetindo este ciclo 3 vezes para acalmar o sistema nervoso. [Pausa de 15 segundos]. Mova suavemente os dedos dos pés e tornozelos, repetindo 3 vezes. [Pausa de 15 segundos]."
+                response_text = "Bem-vindo ao AL CIELO. Esta sessão é para o seu bem-estar geral. Por favor, adote uma postura confortável. Inspire profundamente pelo nariz e expire devagar pela boca. Vamos repetir essa respiração calma mais uma vez, tomando todo o tempo necessário."
             else:
-                response_text = "Bienvenido a AL CIELO. Esta sesión es de bienestar general. Tome una postura cómoda. Inhale profundamente por la nariz y expire despacio por la boca, repitiendo este ciclo 3 veces para calmar el sistema nervioso. [Pausa de 15 segundos]. Mueva suavemente los dedos de los pies y los tobillos, repitiendo este proceso 3 veces. [Pausa de 15 segundos]."
+                response_text = "Bienvenido a AL CIELO. Esta sesión es de bienestar general. Tome una postura cómoda. Inhale profundamente por la nariz y exhale despacio por la boca. Repitamos este movimiento una vez más con calma, tomándonos el tiempo necesario para sentirlo bien."
 
         return {"status": "success", "session_content": response_text}
     except HTTPException:
