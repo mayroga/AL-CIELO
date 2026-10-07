@@ -1,5 +1,6 @@
 import os
 from fastapi import FastAPI, HTTPException, Request, Header
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 import stripe
 from google import genai
@@ -22,7 +23,7 @@ STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-# Prompt maestro inmutable estructurado por bloques temporales estrictos para garantizar calidad profesional de 10 minutos
+# Prompt maestro inmutable estructurado por bloques temporales estrictos
 SYSTEM_WELLNESS_PROMPT = """
 Eres el motor de bienestar universal de la aplicación "AL CIELO", diseñada exclusivamente para adultos mayores de 50 años en adelante. 
 Tu alcance es universal: debes estructurar sesiones aptas para cualquier condición física (personas totalmente activas, con movilidad reducida, en silla de ruedas o completamente postradas/en cama).
@@ -40,14 +41,185 @@ REGLAS DE ORO:
 3. Tono sumamente cálido, humano, respetuoso, claro, directo y fácil de seguir.
 """
 
-@app.get("/")
-async def root():
-    return {
-        "app_name": "AL CIELO",
-        "status": "online",
-        "target": "50+ Universal Wellness",
-        "version": "1.0.0"
-    }
+# Interfaz visual interactiva amigable para adultos mayores (50+)
+@app.get("/", response_class=HTMLResponse)
+async def interactive_ui():
+    return """
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>AL CIELO - Bienestar Diario (50+)</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                background-color: #f4f8fb;
+                color: #2c3e50;
+                margin: 0;
+                padding: 20px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
+            .container {
+                max-width: 700px;
+                width: 100%;
+                background: white;
+                padding: 30px;
+                border-radius: 12px;
+                box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+                text-align: center;
+            }
+            h1 { color: #1b4f72; font-size: 2.2rem; margin-bottom: 5px; }
+            p.subtitle { font-size: 1.2rem; color: #566573; margin-bottom: 25px; }
+            .section {
+                margin: 20px 0;
+                padding: 20px;
+                background: #fdfefe;
+                border: 1px solid #ebedef;
+                border-radius: 8px;
+                text-align: left;
+            }
+            label { font-size: 1.1rem; font-weight: bold; color: #2c3e50; display: block; margin-bottom: 8px; }
+            select, button {
+                font-size: 1.1rem;
+                padding: 12px 15px;
+                width: 100%;
+                border-radius: 6px;
+                border: 1px solid #cbd5e1;
+                margin-top: 5px;
+                box-sizing: border-box;
+            }
+            button {
+                background-color: #2e86c1;
+                color: white;
+                font-weight: bold;
+                border: none;
+                cursor: pointer;
+                margin-top: 15px;
+                transition: background 0.3s;
+            }
+            button:hover { background-color: #2471a3; }
+            .btn-pay {
+                background-color: #27ae60;
+            }
+            .btn-pay:hover { background-color: #219653; }
+            #output {
+                margin-top: 20px;
+                background: #f8f9fa;
+                border-left: 5px solid #2e86c1;
+                padding: 15px;
+                text-align: left;
+                white-space: pre-wrap;
+                font-size: 1.05rem;
+                line-height: 1.6;
+                display: none;
+                max-height: 400px;
+                overflow-y: auto;
+            }
+            .disclaimer {
+                font-size: 0.9rem;
+                color: #7f8c8d;
+                margin-top: 25px;
+                border-top: 1px solid #eaecee;
+                padding-top: 15px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>AL CIELO</h1>
+            <p class="subtitle">Bienestar Diario Adaptado (50+)</p>
+
+            <div class="section">
+                <label for="languageSelect">Seleccione su idioma / Select language:</label>
+                <select id="languageSelect">
+                    <option value="es">Español</option>
+                    <option value="en">English</option>
+                    <option value="pt">Português</option>
+                </select>
+
+                <button onclick="solicitarSesion(true)">Ver Muestra Gratuita (30 Segundos)</button>
+                <button onclick="solicitarSesion(false)">Iniciar Sesión Completa (10 Minutos)</button>
+            </div>
+
+            <div class="section" style="background: #eaf2f8; text-align: center;">
+                <label>Acceso Completo Permanente ($15.99 / mes)</label>
+                <p style="font-size: 0.95rem; color: #515a5a;">Asegure el acceso total diario vinculado a su dispositivo.</p>
+                <button class="btn-pay" onclick="iniciarPago()">Suscribirme Ahora con Stripe</button>
+            </div>
+
+            <div id="output"></div>
+
+            <div class="disclaimer">
+                Aviso de seguridad: Realice únicamente los movimientos que le resulten cómodos y deténgase ante cualquier molestia. Enfoque exclusivo de bienestar.
+            </div>
+        </div>
+
+        <script>
+            // Genera o recupera un identificador de hardware único local para el navegador
+            function getDeviceId() {
+                let deviceId = localStorage.getItem("al_cielo_device_id");
+                if (!deviceId) {
+                    deviceId = "web-client-" + Math.random().toString(36).substring(2) + "-" + Date.now();
+                    localStorage.setItem("al_cielo_device_id", deviceId);
+                }
+                return deviceId;
+            }
+
+            async function solicitarSesion(isHook) {
+                const lang = document.getElementById("languageSelect").value;
+                const outputDiv = document.getElementById("output");
+                outputDiv.style.display = "block";
+                outputDiv.innerText = "Conectando con el motor de bienestar... Por favor espere.";
+
+                try {
+                    const response = await fetch('/api/v1/generate-session', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            device_id: getDeviceId(),
+                            language: lang,
+                            is_hook: isHook
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (response.status === 200) {
+                        outputDiv.innerText = data.session_content;
+                    } else if (response.status === 403) {
+                        outputDiv.innerText = "Acceso restringido: Esta sesión completa requiere una suscripción activa. Utilice el botón verde de pago para desbloquear su dispositivo.";
+                    } else {
+                        outputDiv.innerText = "Error: " + (data.detail || "No se pudo procesar la solicitud.");
+                    }
+                } catch (err) {
+                    outputDiv.innerText = "Error de conexión técnico: " + err.message;
+                }
+            }
+
+            async function iniciarPago() {
+                try {
+                    const response = await fetch('/api/v1/create-checkout-session', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ device_id: getDeviceId() })
+                    });
+                    const data = await response.json();
+                    if (data.checkout_url) {
+                        window.location.href = data.checkout_url;
+                    } else {
+                        alert("No se pudo generar la pasarela de pago.");
+                    }
+                } catch (err) {
+                    alert("Error al conectar con Stripe: " + err.message);
+                }
+            }
+        </script>
+    </body>
+    </html>
+    """
 
 @app.post("/api/v1/create-checkout-session")
 async def create_checkout_session(request: Request):
@@ -73,6 +245,42 @@ async def create_checkout_session(request: Request):
         return {"checkout_url": checkout_session.url}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/success", response_class=HTMLResponse)
+async def payment_success(device_id: str = None):
+    """Pantalla visual de éxito al retornar de Stripe tras completar el pago."""
+    if device_id:
+        authorize_device(device_id)
+    return """
+    <!DOCTYPE html>
+    <html lang="es">
+    <head><meta charset="UTF-8"><title>Pago Exitoso - AL CIELO</title></head>
+    <body style="font-family: Arial; text-align: center; padding-top: 50px; background: #f4f8fb;">
+        <div style="max-width: 500px; margin: auto; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+            <h1 style="color: #27ae60;">¡Suscripción Exitosa!</h1>
+            <p style="font-size: 1.1rem;">Su dispositivo ha sido autorizado correctamente.</p>
+            <a href="/" style="display: inline-block; margin-top: 20px; padding: 12px 20px; background: #2e86c1; color: white; text-decoration: none; border-radius: 6px; font-weight: bold;">Volver a la Aplicación</a>
+        </div>
+    </body>
+    </html>
+    """
+
+@app.get("/cancel", response_class=HTMLResponse)
+async def payment_cancel():
+    """Pantalla visual si el usuario cancela el pago en Stripe."""
+    return """
+    <!DOCTYPE html>
+    <html lang="es">
+    <head><meta charset="UTF-8"><title>Pago Cancelado - AL CIELO</title></head>
+    <body style="font-family: Arial; text-align: center; padding-top: 50px; background: #f4f8fb;">
+        <div style="max-width: 500px; margin: auto; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+            <h1 style="color: #c0392b;">Pago Cancelado</h1>
+            <p style="font-size: 1.1rem;">El proceso de suscripción fue cancelado. Puede intentarlo de nuevo cuando lo desee.</p>
+            <a href="/" style="display: inline-block; margin-top: 20px; padding: 12px 20px; background: #2e86c1; color: white; text-decoration: none; border-radius: 6px; font-weight: bold;">Volver al Inicio</a>
+        </div>
+    </body>
+    </html>
+    """
 
 @app.post("/api/v1/stripe-webhook")
 async def stripe_webhook(request: Request, stripe_signature: str = Header(None)):
@@ -129,7 +337,7 @@ async def generate_session(request: Request):
         Tono cálido, directo, sin rodeos, adaptado para cualquier estado físico (desde activos hasta postrados), variabilidad infinita.
         """
 
-        response = gemini_client.models.generate_content(
+        response = geminit_client = gemini_client.models.generate_content(
             model='gemini-2.5-flash',
             contents=prompt,
             config=types.GenerateContentConfig(
