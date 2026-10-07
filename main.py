@@ -40,6 +40,15 @@ REGLAS DE ORO:
 3. Tono sumamente cálido, humano, respetuoso, claro, directo y fácil de seguir.
 """
 
+@app.get("/")
+async def root():
+    return {
+        "app_name": "AL CIELO",
+        "status": "online",
+        "target": "50+ Universal Wellness",
+        "version": "1.0.0"
+    }
+
 @app.post("/api/v1/create-checkout-session")
 async def create_checkout_session(request: Request):
     """Crea la pasarela de pago en Stripe por $15.99 vinculada al hardware del dispositivo."""
@@ -142,11 +151,3 @@ async def generate_session(request: Request):
         raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-  @app.get("/")
-async def root():
-    return {
-        "app_name": "AL CIELO",
-        "status": "online",
-        "target": "50+ Universal Wellness",
-        "version": "1.0.0"
-    }      
