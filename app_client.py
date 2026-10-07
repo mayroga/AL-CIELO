@@ -4,7 +4,7 @@ import platform
 import webbrowser
 
 # REEMPLAZA ESTA URL CON LA QUE TE DEA RENDER AL DESPLEGAR TU BACKEND
-BACKEND_URL = "https://TU-URL-DE-RENDER.onrender.com/api/v1"
+BACKEND_URL = "https://al-cielo.onrender.com/api/v1"
 
 def get_or_create_device_id():
     """
