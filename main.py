@@ -22,16 +22,22 @@ STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-# Prompt maestro inmutable: Enfoque absoluto en wellness universal, 50+, sin jerga médica y con aviso de seguridad
+# Prompt maestro inmutable estructurado por bloques temporales estrictos para garantizar calidad profesional de 10 minutos
 SYSTEM_WELLNESS_PROMPT = """
 Eres el motor de bienestar universal de la aplicación "AL CIELO", diseñada exclusivamente para adultos mayores de 50 años en adelante. 
 Tu alcance es universal: debes estructurar sesiones aptas para cualquier condición física (personas totalmente activas, con movilidad reducida, en silla de ruedas o completamente postradas/en cama).
 
-REGLAS ABSOLUTAS E INMUTABLES:
+REGLAS ABSOLUTAS E INMUTABLES PARA LA DURACIÓN Y ESTRUCTURA DE 10 MINUTOS:
+Cada sesión diaria debe entregarse estrictamente estructurada en 4 bloques temporales claros para garantizar una experiencia completa y profesional:
+1. BLOQUE 1 (Minuto 0 al 1): Aviso de seguridad obligatorio de 5 segundos, seguido de calibración respiratoria inicial y toma de conciencia corporal (adaptada para cualquier postura, incluso encamados).
+2. BLOQUE 2 (Minuto 1 al 4): Movilización articular suave y activación circulatoria por tandas (comenzando desde extremidades superiores o inferiores según el enfoque del día, asegurando micro-movimientos seguros).
+3. BLOQUE 3 (Minuto 4 al 8): Tandas principales de bienestar postural, estiramientos de bajo impacto y conexión de movilidad funcional, con instrucciones claras y pausas de respiración.
+4. BLOQUE 4 (Minuto 8 al 10): Cierre de relajación profunda, integración de la postura y mensaje de estabilidad y esperanza para el resto del día.
+
+REGLAS DE ORO:
 1. ENFOQUE EXCLUSIVO DE WELLNESS: Cero términos médicos, diagnósticos, tratamientos o curas. Eres un especialista en bienestar, movilidad, circulación y estilo de vida.
-2. AVISO OBLIGATORIO DE SEGURIDAD: Toda sesión debe iniciar obligatoriamente con un recordatorio verbal de seguridad de 5 segundos indicando que se debe realizar únicamente lo que resulte cómodo y detenerse inmediatamente ante cualquier molestia.
-3. ADAPTABILIDAD UNIVERSAL: Las pautas deben servir tanto para quien mueve sus extremidades con normalidad como para quien solo puede realizar micro-movimientos articulares o respiración consciente.
-4. VARIABILIDAD INFINITA: Jamás repites la misma secuencia. Cambias sutilmente el orden, los enfoques, las metáforas de bienestar y las pautas de respiración para que cada sesión diaria sea única y diferente.
+2. VARIABILIDAD INFINITA: Jamás repites la misma secuencia. Cambias sutilmente el orden, los enfoques, las metáforas de bienestar y las pautas de respiración para que cada sesión diaria sea única y diferente.
+3. Tono sumamente cálido, humano, respetuoso, claro, directo y fácil de seguir.
 """
 
 @app.post("/api/v1/create-checkout-session")
@@ -91,7 +97,7 @@ async def verify_device(request: Request):
 async def generate_session(request: Request):
     """
     Genera la sesión diaria de 10 minutos (o gancho gratuito de 30 segundos) 
-    validando obligatoriamente la suscripción del dispositivo.
+    validando obligatoriamente la suscripción del dispositivo bajo la estructura por bloques.
     """
     try:
         body = await request.json()
@@ -106,11 +112,11 @@ async def generate_session(request: Request):
         if not is_hook and not check_device_authorization(device_id):
             raise HTTPException(status_code=403, detail="Device not authorized. Subscription required.")
 
-        duration_text = "30 seconds free visual preview hook" if is_hook else "10 minutes complete unique daily session"
+        duration_text = "30 seconds free visual preview hook" if is_hook else "10 minutes complete unique daily session structured in 4 time blocks"
         
         prompt = f"""
         Genera una sesión dirigida a adultos mayores de 50 años en adelante, en idioma [{language}], duración [{duration_text}].
-        Incluye obligatoriamente el aviso legal inicial de seguridad de 5 segundos, activación circulatoria universal, confort postural y calibración respiratoria.
+        Sigue estrictamente la estructura de bloques temporales exigida, asegurando el aviso legal inicial de seguridad, activación circulatoria universal, confort postural y tandas de bienestar.
         Tono cálido, directo, sin rodeos, adaptado para cualquier estado físico (desde activos hasta postrados), variabilidad infinita.
         """
 
