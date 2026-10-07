@@ -262,33 +262,54 @@ utterance.lang=lang==="es"?"es-ES":lang==="pt"?"pt-PT":"en-US";
 utterance.rate=.85;
 utterance.pitch=1;
 
-// Sincronización del círculo respiratorio al compás de la voz y las palabras clave de respiración
-utterance.onboundary=(event)=>{
-const spokenWord=textoLimpio.substring(event.charIndex, event.charIndex + 20).toLowerCase();
 const breathView=document.getElementById("breathingVisualView");
 const circle=document.getElementById("breathCircleElement");
 const phaseText=document.getElementById("breathPhaseText");
 const descText=document.getElementById("breathDescText");
 const benefitText=document.getElementById("breathBenefitText");
 
+// Variable de control para evitar redibujados innecesarios y congelamientos
+let estadoRespiracionActual = false;
+
+utterance.onboundary=(event)=>{
+const spokenWord=textoLimpio.substring(event.charIndex, event.charIndex + 25).toLowerCase();
+
 const esRespiracion = spokenWord.includes("inhala") || spokenWord.includes("exhala") || spokenWord.includes("respir") || spokenWord.includes("inhale") || spokenWord.includes("exhale") || spokenWord.includes("inspire") || spokenWord.includes("expire");
 
 if(esRespiracion){
+if(breathView.style.display !== "flex"){
 breathView.style.display="flex";
-if(spokenWord.includes("exhala") || spokenWord.includes("exhale") || spokenWord.includes("expire")){
+}
+
+const esExhalacion = spokenWord.includes("exhala") || spokenWord.includes("exhale") || spokenWord.includes("expire");
+
+if(esExhalacion){
+if(estadoRespiracionActual !== "exhala"){
+estadoRespiracionActual = "exhala";
 circle.style.transform="scale(1.0)";
 phaseText.innerText = lang==="es"?"Exhala":lang==="pt"?"Expire":"Exhale";
 descText.innerText = lang==="es"?"Exhala suavemente por la boca liberando tensiones...":lang==="pt"?"Expire suavemente pela boca...":"Exhale gently...";
+}
 }else{
+if(estadoRespiracionActual !== "inhala"){
+estadoRespiracionActual = "inhala";
 circle.style.transform="scale(1.25)";
 phaseText.innerText = lang==="es"?"Inhala":lang==="pt"?"Inspire":"Inhale";
 descText.innerText = lang==="es"?"Inhala profundamente por la nariz ensanchando el abdomen...":lang==="pt"?"Inspire profundamente...":"Inhale deeply...";
 }
+}
 benefitText.innerText = lang==="es"?"Beneficio: Oxigena profundamente el cuerpo y aquieta el sistema nervioso.":lang==="pt"?"Benefício: Oxigena o corpo e acalma o sistema nervoso.":"Benefit: Deeply oxygenates the body.";
 } else {
-// Si el asistente pasa a ejercicios de movilidad de extremidades u otras partes, se oculta el círculo de respiración
+if(breathView.style.display !== "none"){
 breathView.style.display="none";
+estadoRespiracionActual = false;
 }
+}
+};
+
+utterance.onend = () => {
+breathView.style.display="none";
+estadoRespiracionActual = false;
 };
 
 window.speechSynthesis.speak(utterance);
