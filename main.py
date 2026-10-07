@@ -1,14 +1,12 @@
 import os
-import time
 from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 import stripe
 from google import genai
 from google.genai import types
 
-app = FastAPI(title="AL CIELO - Production Engine", version="3.0.0")
+app = FastAPI(title="AL CIELO - Production Engine", version="2.5.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -18,22 +16,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configuración de Stripe desde Variables de Entorno de Render
+# Configuración de Stripe y Webhook desde Render
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
-STRIPE_PRICE_ID1 = os.getenv("STRIPE_PRICE_ID1") or os.getenv("STRIPE_PRICE_ID")
-STRIPE_PRICE_ID2 = os.getenv("STRIPE_PRICE_ID2")
+STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 
 # Credenciales de administración ocultas en Render
 ADMIN_USER = os.getenv("ADMIN_USER")
 ADMIN_PASS = os.getenv("ADMIN_PASS")
-
-# Kernel volátil para control de sesión y planes
-VOLATILE_KERNEL = {
-    "session_active": False,
-    "is_premium": False,
-    "expires_at": 0.0
-}
 
 # Inicialización segura de Gemini
 try:
@@ -53,9 +43,6 @@ ABSOLUTE RULES:
 3. Zero medical jargon. Speak as a lifestyle and wellness specialist.
 """
 
-class StripeSessionRequest(BaseModel):
-    price_tier: int
-
 @app.get("/", response_class=FileResponse)
 async def serve_frontend():
     return "index.html"
@@ -72,118 +59,77 @@ async def authorize_courtesy(request: Request):
 
     if username == ADMIN_USER and password == ADMIN_PASS and device_id:
         AUTHORIZED_DEVICES.add(device_id)
-        VOLATILE_KERNEL["session_active"] = True
         return {"status": "success"}
     
     raise HTTPException(status_code=401, detail="Invalid credentials.")
 
-# ==========================================
-# STRIPE CHECKOUT
-# ==========================================
-@app.post("/api/stripe/create-checkout")
-async def create_checkout_session(req: StripeSessionRequest, request: Request):
-    if req.price_tier not in (1, 2):
-        raise HTTPException(status_code=400, detail="Invalid price tier.")
-
-    price_id = STRIPE_PRICE_ID1 if req.price_tier == 1 else STRIPE_PRICE_ID2
-
-    if not price_id:
-        raise HTTPException(
-            status_code=500,
-            detail="Stripe Price ID is not configured in Render environment variables."
-        )
-
-    origin = request.headers.get("origin")
-    if not origin:
-        host = request.headers.get("host")
-        origin = f"https://{host}" if host else "https://al-cielo.onrender.com"
-
-    mode = "payment" if req.price_tier == 1 else "subscription"
-
+@app.post("/api/v1/create-checkout-session")
+async def create_checkout_session(request: Request):
     try:
-        session = stripe.checkout.Session.create(
-            payment_method_types=["card"],
-            line_items=[{"price": price_id, "quantity": 1}],
-            mode=mode,
-            success_url=f"{origin}/?stripe_status=success",
-            cancel_url=f"{origin}/?stripe_status=cancel",
-            metadata={"tier": str(req.price_tier)}
-        )
-        return {"url": session.url}
+        body = await request.json()
+        device_id = body.get("device_id")
+        if not device_id:
+            raise HTTPException(status_code=400, detail="Device ID required.")
 
+        if not stripe.api_key or not STRIPE_PRICE_ID:
+            raise HTTPException(status_code=500, detail="Stripe keys are missing in Render environment variables.")
+
+        host = request.headers.get("host", "al-cielo.onrender.com")
+        scheme = "https" if "onrender.com" in host or "https" in request.headers.get("x-forwarded-proto", "") else "http"
+        base_url = f"{scheme}://{host}"
+
+        checkout_session = stripe.checkout.Session.create(
+            payment_method_types=['card'],
+            line_items=[{'price': STRIPE_PRICE_ID, 'quantity': 1}],
+            mode='subscription',
+            success_url=f"{base_url}/success?device_id={device_id}",
+            cancel_url=f"{base_url}/cancel",
+            metadata={'device_id': device_id}
+        )
+        return {"checkout_url": checkout_session.url}
     except Exception as e:
-        print(f"[STRIPE ERROR] {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Unable to create Stripe checkout session."
-        )
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ==========================================
-# STRIPE WEBHOOK
+# ENDPOINT DE WEBHOOK DE STRIPE
 # ==========================================
-@app.post("/api/stripe/webhook")
-async def stripe_webhook(request: Request):
+@app.post("/webhook/stripe")
+async def stripe_webhook(request: Request, stripe_signature: str = Header(None)):
     payload = await request.body()
-    signature = request.headers.get("stripe-signature")
+    event = None
 
     try:
-        event = stripe.Webhook.construct_event(
-            payload,
-            signature,
-            STRIPE_WEBHOOK_SECRET
-        )
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid payload.")
-    except stripe.error.SignatureVerificationError:
-        raise HTTPException(status_code=400, detail="Invalid webhook signature.")
-
-    if event["type"] == "checkout.session.completed":
-        session = event["data"]["object"]
-        metadata = session.get("metadata", {})
-        tier = metadata.get("tier", "1")
-
-        VOLATILE_KERNEL["session_active"] = True
-
-        if tier == "2":
-            VOLATILE_KERNEL["is_premium"] = True
-            VOLATILE_KERNEL["expires_at"] = time.time() + 2592000.0
+        if STRIPE_WEBHOOK_SECRET:
+            event = stripe.Webhook.construct_event(
+                payload, stripe_signature, STRIPE_WEBHOOK_SECRET
+            )
         else:
-            VOLATILE_KERNEL["is_premium"] = False
-            VOLATILE_KERNEL["expires_at"] = time.time() + 600.0
+            # Si por alguna razón no se configuró el secret, procesa el evento directo (modo seguro básico)
+            event = stripe.Event.construct_from(
+                await request.json(), stripe.api_key
+            )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Webhook error: {str(e)}")
 
-        return {"status": "success"}
+    # Cuando el pago de la suscripción se completa exitosamente
+    if event['type'] == 'checkout.session.completed':
+        session = event['data']['object']
+        metadata = session.get('metadata', {})
+        device_id = metadata.get('device_id')
+        
+        if device_id:
+            AUTHORIZED_DEVICES.add(device_id)
 
-    return {"status": "event_unhandled"}
-
-# ==========================================
-# ESTADO DE SESIÓN
-# ==========================================
-@app.get("/api/auth/session-status")
-async def get_session_status():
-    now = time.time()
-    active = VOLATILE_KERNEL.get("session_active", False)
-    premium = VOLATILE_KERNEL.get("is_premium", False)
-    expires = VOLATILE_KERNEL.get("expires_at", 0.0)
-
-    if active and (premium or now <= expires):
-        return {
-            "active": True,
-            "is_premium": premium,
-            "time_left": 2592000 if premium else max(0, int(expires - now))
-        }
-    return {
-        "active": False,
-        "is_premium": False,
-        "time_left": 0
-    }
+    return {"status": "success"}
 
 @app.get("/success", response_class=HTMLResponse)
-async def payment_success():
-    VOLATILE_KERNEL["session_active"] = True
+async def payment_success(device_id: str = None):
+    if device_id:
+        AUTHORIZED_DEVICES.add(device_id)
     return """
     <html><body style="background:#0f172a; color:white; text-align:center; padding-top:60px; font-family:sans-serif;">
-        <h1 style="color:#4ade80;">Payment Successful!</h1>
-        <p>Your session has been authorized.</p>
+        <h1 style="color:#4ade80;">Subscription Activated Successfully!</h1>
+        <p>Your device is now permanently authorized.</p>
         <a href="/" style="display:inline-block; margin-top:20px; padding:12px 24px; background:#0284c7; color:white; text-decoration:none; border-radius:8px; font-weight:bold;">Return to AL CIELO</a>
     </body></html>
     """
@@ -201,15 +147,14 @@ async def payment_cancel():
 async def generate_session(request: Request):
     try:
         body = await request.json()
+        device_id = body.get("device_id")
         language = body.get("language", "es")
         is_hook = body.get("is_hook", False)
 
-        now = time.time()
-        active = VOLATILE_KERNEL.get("session_active", False)
-        premium = VOLATILE_KERNEL.get("is_premium", False)
-        expires = VOLATILE_KERNEL.get("expires_at", 0.0)
+        if not device_id:
+            raise HTTPException(status_code=400, detail="Device ID required.")
 
-        is_authorized = active and (premium or now <= expires)
+        is_authorized = (device_id in AUTHORIZED_DEVICES)
         if not is_hook and not is_authorized:
             raise HTTPException(status_code=403, detail="Subscription required.")
 
