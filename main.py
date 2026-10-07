@@ -7,7 +7,7 @@ import stripe
 from google import genai
 from google.genai import types
 
-app = FastAPI(title="AL CIELO - Production Engine", version="3.4.0")
+app = FastAPI(title="AL CIELO - Production Engine", version="3.5.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -94,7 +94,7 @@ try:
 except Exception:
     gemini_client = None
 
-# INSTRUCCIÓN MAESTRA AJUSTADA: ACCIÓN PURA Y HUMANA, SIN MENCIONAR "FASES"
+# INSTRUCCIÓN MAESTRA: ENTRENADOR HUMANO DE 10 MINUTOS (EXCLUSIVO PARA ACCESO COMPLETO)
 SYSTEM_WELLNESS_PROMPT = """
 You are the exclusive, professional human-like wellness coach for the platform "AL CIELO", designed for adults aged 50 and over (active, seated, or resting).
 Your tone must be warm, direct, calm, and conversational. You act as an expert companion right beside the user.
@@ -103,7 +103,7 @@ STRICT OPERATIONAL RULES:
 1. NEVER mention words like "phase", "fase", "auditoría", "IA", or "ChatGPT". Be purely action-oriented and professional.
 2. IF THIS IS A FREE 30-SECOND PREVIEW (is_hook=true):
    - Provide a quick, light greeting and a single simple breathing or hand movement exercise that lasts about 30 seconds when read aloud. Give just a small sample so the user understands the dynamic.
-3. IF THIS IS THE FULL 10-MINUTE PAID SESSION (is_hook=false):
+3. IF THIS IS THE FULL 10-MINUTE SESSION (is_hook=false) - APPLIES TO BOTH STRIPE SUBSCRIBERS AND USERNAME/PASSWORD LOGINS:
    - Act purely as the live personal trainer and wellness specialist. 
    - DO NOT divide the text with robotic labels like "Phase 1" or "Phase 2". Instead, transition smoothly as a human coach would.
    - Flow naturally through gentle joint activation, comfort positioning, and deep breathing, writing rich, continuous, and paced instructions designed to provide a complete 10-minute active experience with pauses and direct coaching cues.
@@ -117,6 +117,7 @@ async def serve_frontend():
 
 @app.post("/api/v1/authorize-courtesy")
 async def authorize_courtesy(request: Request):
+    """Acceso mediante Username y Password. Autoriza el dispositivo para recibir los 10 minutos completos."""
     body = await request.json()
     username = body.get("username", "").strip()
     password = body.get("password", "").strip()
@@ -257,17 +258,22 @@ async def generate_session(request: Request):
         device_id = str(body.get("device_id", "")).strip()
         language = body.get("language", "es")
         is_hook = bool(body.get("is_hook", False))
+        
         if not device_id:
             raise HTTPException(status_code=400, detail="Device id required.")
+            
+        # REGLA DE ORO LEGAL: Si NO es hook (es decir, entró por Stripe O por Username/Password autorizado), 
+        # se le exige obligatoriamente el pase de autorización en la BD. Si está autorizado, recibe los 10 minutos completos.
         if not is_hook and not check_device_authorization(device_id):
             raise HTTPException(
-                status_code=403, detail="Subscription required."
+                status_code=403, detail="Subscription or login required for full session."
             )
 
         lang_names = {"es": "Spanish", "en": "English", "pt": "Portuguese"}
         selected_lang_name = lang_names.get(language, "Spanish")
         
         if is_hook:
+            # PRUEBA GRATUITA: Estricta y corta de 30 segundos
             prompt = f"""
 Generate a strict 30-SECOND FREE PREVIEW in [{selected_lang_name}].
 Keep it extremely brief (max 50 words): a warm greeting and one single gentle breathing action. Do not say the word phase.
@@ -275,15 +281,16 @@ Output ONLY plain conversational text in {selected_lang_name}. No titles.
 """
             max_tokens = 150
         else:
+            # SESIÓN COMPLETA DE 10 MINUTOS (Aplica tanto a pago Stripe como a Login Username/Password)
             prompt = f"""
 Generate a full, continuous, professional 10-MINUTE GUIDED WELLNESS SESSION strictly in [{selected_lang_name}]
 for adults aged 50 and over (active, seated, or resting).
-Act strictly as a live human personal wellness trainer. 
+Act strictly as a live human personal wellness trainer guiding the user step by step in real time. 
 DO NOT use the word 'fase' or 'phase' or any robotic section labels. 
-Instead, write a rich, continuous, step-by-step coaching routine that flows naturally from gentle joint movements and posture adjustments into deep breathing exercises, providing enough descriptive pacing, pauses, and actionable coaching cues to comfortably fill 10 full minutes of calm spoken practice.
+Instead, write a rich, continuous, deeply detailed coaching routine that flows naturally from gentle joint movements and posture adjustments into deep breathing exercises, providing enough descriptive pacing, pauses, and actionable coaching cues to comfortably fill 10 full minutes of calm spoken practice.
 Output ONLY plain conversational text in {selected_lang_name}. No meta-commentary or titles.
 """
-            max_tokens = 1500
+            max_tokens = 2500  # Tokenaje alto para garantizar los 10 minutos completos de texto
 
         response_text = ""
         if gemini_client:
