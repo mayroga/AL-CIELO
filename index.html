@@ -12,7 +12,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#0f172a;color:#f8
 #hidden-auth-box{display:none;position:absolute;top:35px;right:15px;background:#1e293b;border:1px solid #475569;padding:10px;border-radius:8px;box-shadow:0 4px 12px #0008;z-index:100;width:220px}
 #hidden-auth-box input{width:100%;padding:8px;margin-bottom:7px;background:#0f172a;border:1px solid #334155;color:#fff;border-radius:4px;font-size:.9rem}
 #hidden-auth-box button{width:100%;padding:8px;background:#0284c7;color:#fff;border:0;border-radius:4px;cursor:pointer;font-weight:bold}
-.container{max-width:650px;width:100%;background:#1e293b;padding:30px;border-radius:16px;box-shadow:0 10px 25px #0006;text-align:left;border:1px solid #334155;margin-top:40px;margin-bottom:20px}
+.container{max-width:650px;width:100%;background:#1e293b;padding:30px;border-radius:16px;box-shadow:0 10px 25px #0006;text-align:left;border:1px solid #334155;margin-top:40px;margin-bottom:20px;transition:all 0.3s ease}
 h1{color:#38bdf8;font-size:2.5rem;margin:0 0 5px;text-align:center}
 .subtitle{font-size:1.2rem;color:#94a3b8;margin:0 0 20px;text-align:center;font-weight:bold}
 .info-card{background:#0f172a;border:1px solid #334155;padding:20px;border-radius:10px;margin-bottom:25px}
@@ -30,7 +30,15 @@ select{font-size:1.1rem;padding:14px;width:100%;border-radius:8px;border:1px sol
 .btn-session{background:#0d9488;color:#fff}
 .btn-pay{background:#16a34a;color:#fff}
 .btn-audio{background:#d97706;color:#fff;display:none}
-#output-box{margin-top:25px;background:#0f172a;border:1px solid #334155;padding:20px;border-radius:8px;font-size:1.2rem;line-height:1.6;display:none;max-height:350px;overflow-y:auto;color:#f8fafc;white-space:pre-wrap}
+
+/* Estilos de Pantalla Despejada y Círculo Respiratorio */
+#output-container{margin-top:25px;display:none;flex-direction:column;align-items:center}
+#output-box{background:#0f172a;border:1px solid #334155;padding:20px;border-radius:8px;font-size:1.1rem;line-height:1.6;width:100%;max-height:200px;overflow-y:auto;color:#f8fafc;white-space:pre-wrap;margin-bottom:20px}
+.breathing-view{display:none;flex-direction:column;align-items:center;justify-content:center;background:#0b1329;border:2px solid #38bdf8;padding:30px;border-radius:16px;width:100%;text-align:center;margin-top:10px}
+.breath-circle{width:220px;height:220px;border-radius:50%;background:radial-gradient(circle, #38bdf8 0%, #0284c7 70%, #0369a1 100%);box-shadow:0 0 30px rgba(56, 189, 248, 0.4);display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-weight:bold;font-size:1.4rem;transition:transform 4s ease-in-out;margin:20px 0}
+.breath-info{font-size:1rem;color:#bae6fd;margin-top:10px;max-width:400px;line-height:1.4}
+.breath-benefits{font-size:0.9rem;color:#93c5fd;margin-top:8px;font-style:italic}
+
 #payment-status{display:none;margin-top:15px;padding:15px;border-radius:8px;text-align:center;font-weight:bold;line-height:1.5}
 .payment-ok{background:#064e3b;color:#a7f3d0;border:1px solid #10b981}
 .payment-wait{background:#422006;color:#fde68a;border:1px solid #f59e0b}
@@ -48,19 +56,19 @@ select{font-size:1.1rem;padding:14px;width:100%;border-radius:8px;border:1px sol
 <button onclick="realizarAccesoCortesia()">Free Access</button>
 </div>
 
-<div class="container">
+<div class="container" id="mainContainer">
 <h1 id="t-title">AL CIELO</h1>
 <p id="t-subtitle" class="subtitle">Bienestar, Movilidad y Conexión Diaria (50+)</p>
 
-<div class="info-card">
+<div class="info-card" id="infoCardSection">
 <h3 id="t-what-is-title">¿Qué es y para qué sirve AL CIELO?</h3>
 <p id="t-what-is-desc">Es un sistema de bienestar integral diseñado para personas de 50 años en adelante. Ofrece rutinas guiadas de bienestar y movilidad adaptadas a diferentes realidades.</p>
 
 <h3 id="t-contains-title" style="margin-top:15px">¿Qué contiene el servicio?</h3>
 <ul>
-<li><strong id="t-c1-strong">Movilidad Universal Adaptada:</strong> <span id="t-c1-desc">Ejercicios suaves aptos tanto para personas activas como para quienes están en silla de ruedas o encamados.</span></li>
-<li><strong id="t-c2-strong">Doble Accesibilidad (Audio y Texto Visual):</strong> <span id="t-c2-desc">Puedes escuchar las instrucciones y también leerlas en pantalla.</span></li>
-<li><strong id="t-c3-strong">Sesiones de 10 Minutos:</strong> <span id="t-c3-desc">Respiración y movimientos suaves sin tecnicismos médicos.</span></li>
+<li><strong id="t-c1-strong">Movilidad Universal Adaptada:</strong> <span id="t-c1-desc">Ejercicios suaves aptos tanto para personas activas como para quienes están en silla de ruedas o encamados (incluyendo repeticiones para un bienestar completo).</span></li>
+<li><strong id="t-c2-strong">Doble Accesibilidad (Audio y Visual):</strong> <span id="t-c2-desc">Guía de respiración visual inmersiva en pantalla y locución detallada.</span></li>
+<li><strong id="t-c3-strong">Sesiones Optimizadas:</strong> <span id="t-c3-desc">Respiración y movimientos suaves sin tecnicismos médicos.</span></li>
 </ul>
 </div>
 
@@ -77,14 +85,24 @@ select{font-size:1.1rem;padding:14px;width:100%;border-radius:8px;border:1px sol
 <button id="audioControlBtn" class="btn btn-audio" onclick="reproducirVozHumana()">🗣️ Volver a escuchar en voz alta</button>
 </div>
 
-<div class="control-group" style="background:#111827;padding:15px;border-radius:8px;text-align:center;border:1px dashed #374151">
+<div class="control-group" id="subscriptionSection" style="background:#111827;padding:15px;border-radius:8px;text-align:center;border:1px dashed #374151">
 <label id="t-sub-title" style="color:#4ade80;font-size:1.1rem;margin-bottom:5px">Suscripción ($15.99 / mes)</label>
 <p id="t-sub-desc" style="font-size:.95rem;color:#9ca3af;margin:5px 0 15px">Acceso a las sesiones completas mientras la suscripción permanezca activa.</p>
 <button id="btn-pay-text" class="btn btn-pay" onclick="iniciarPagoStripe()">💳 Activar Suscripción Segura</button>
 <div id="payment-status"></div>
 </div>
 
+<!-- Contenedor Despejado y Círculo Respiratorio -->
+<div id="output-container">
 <div id="output-box"></div>
+<div id="breathingVisualView" class="breath-view">
+<div id="breathCircleElement" class="breath-circle">
+<span id="breathPhaseText">Inhala</span>
+</div>
+<div id="breathDescText" class="breath-info">Inhala profundamente por la nariz...</div>
+<div id="breathBenefitText" class="breath-benefits">Beneficio: Oxigena el cuerpo y relaja el sistema nervioso.</div>
+</div>
+</div>
 
 <div id="t-legal" class="legal-notice">
 <strong>Aviso Legal y de Responsabilidad:</strong> AL CIELO es un servicio de bienestar general y estilo de vida, no un servicio médico ni de diagnóstico. Cada usuario participa bajo su propia discreción y comodidad personal.
@@ -94,6 +112,7 @@ select{font-size:1.1rem;padding:14px;width:100%;border-radius:8px;border:1px sol
 <script>
 let ultimoTextoGenerado="";
 let deviceId=null;
+let breathingInterval=null;
 
 const traducciones={
 es:{
@@ -154,7 +173,7 @@ audioBtn:"🗣️ Ouvir em voz alta novamente",
 subTitle:"Assinatura ($15.99 / mês)",
 subDesc:"Acesso às sessões completas enquanto a assinatura estiver ativa.",
 btnPay:"💳 Ativar Assinatura Segura",
-legal:"<strong>Aviso Legal e de Responsabilidade:</strong> O AL CIELO é um serviço de bem-estar geral e estilo de vida, não um serviço médico ou de diagnóstico. Cada usuário participa por sua própria discrição e conforto."
+legal:"<strong>Aviso Legal y de Responsabilidade:</strong> O AL CIELO é um serviço de bem-estar geral e estilo de vida, não um serviço médico ou de diagnóstico. Cada usuário participa por sua própria discrição e conforto."
 }
 };
 
@@ -199,25 +218,14 @@ box.style.display=box.style.display==="block"?"none":"block";
 async function realizarAccesoCortesia(){
 const u=document.getElementById("accessUser").value.trim();
 const p=document.getElementById("accessPass").value.trim();
-
-if(!u||!p){
-alert("Enter username and password.");
-return;
-}
-
+if(!u||!p){alert("Enter username and password.");return;}
 try{
 const response=await fetch("/api/v1/authorize-courtesy",{
 method:"POST",
 headers:{"Content-Type":"application/json"},
-body:JSON.stringify({
-username:u,
-password:p,
-device_id:getDeviceId()
-})
+body:JSON.stringify({username:u,password:p,device_id:getDeviceId()})
 });
-
 const data=await response.json().catch(()=>({}));
-
 if(response.ok){
 alert("Access granted successfully.");
 document.getElementById("hidden-auth-box").style.display="none";
@@ -229,19 +237,61 @@ alert("Connection error: "+err.message);
 }
 }
 
+function iniciarPantallaDespejada(){
+// Ocultar tarjetas informativas y secciones secundarias para despejar la pantalla
+document.getElementById("infoCardSection").style.display="none";
+document.getElementById("subscriptionSection").style.display="none";
+const outContainer=document.getElementById("output-container");
+outContainer.style.display="flex";
+}
+
+function iniciarCirculoRespiratorio(lang){
+const breathView=document.getElementById("breathingVisualView");
+breathView.style.display="flex";
+const circle=document.getElementById("breathCircleElement");
+const phaseText=document.getElementById("breathPhaseText");
+const descText=document.getElementById("breathDescText");
+const benefitText=document.getElementById("breathBenefitText");
+
+const txts = {
+es: { inhala: "Inhala", exhala: "Exhala", descInh: "Inhala profundamente por la nariz ensanchando el abdomen...", descExh: "Exhala suavemente por la boca liberando tensiones...", ben: "Beneficio: Oxigena profundamente el cuerpo y aquieta el sistema nervioso de forma segura." },
+en: { inhala: "Inhale", exhala: "Exhale", descInh: "Inhale deeply through your nose expanding your abdomen...", descExh: "Exhale gently through your mouth releasing tension...", ben: "Benefit: Deeply oxygenates the body and gently calms the nervous system." },
+pt: { inhala: "Inspire", exhala: "Expire", descInh: "Inspire profundamente pelo nariz expandindo o abdômen...", descExh: "Expire suavemente pela boca liberando tensões...", ben: "Benefício: Oxigena profundamente o corpo e acalma o sistema nervoso." }
+};
+const t = txts[lang] || txts.es;
+
+let inhaling=true;
+if(breathingInterval) clearInterval(breathingInterval);
+
+breathingInterval=setInterval(()=>{
+if(inhaling){
+circle.style.transform="scale(1.25)";
+phaseText.innerText=t.inhala;
+descText.innerText=t.descInh;
+benefitText.innerText=t.ben;
+}else{
+circle.style.transform="scale(1.0)";
+phaseText.innerText=t.exhala;
+descText.innerText=t.descExh;
+benefitText.innerText=t.ben;
+}
+inhaling=!inhaling;
+},4000);
+}
+
 async function obtenerContenido(isHook){
 const lang=document.getElementById("languageSelect").value;
 const box=document.getElementById("output-box");
 const audioBtn=document.getElementById("audioControlBtn");
 const sessionBtn=document.getElementById("btn-sess");
 
-box.style.display="block";
+iniciarPantallaDespejada();
 audioBtn.style.display="none";
 
 if(isHook){
 box.innerText=lang==="es"?"Preparando su muestra gratuita...":lang==="pt"?"Preparando sua amostra gratuita...":"Preparing your free preview...";
 }else{
-box.innerText=lang==="es"?"Verificando su acceso...":lang==="pt"?"Verificando seu acesso...":"Checking your access...";
+box.innerText=lang==="es"?"Iniciando sesión completa de bienestar y movilidad (10 minutos)...":lang==="pt"?"Iniciando sessão completa de bem-estar e mobilidade (10 minutos)...":"Starting full wellness and mobility session (10 minutes)...";
 sessionBtn.disabled=true;
 }
 
@@ -249,11 +299,7 @@ try{
 const response=await fetch("/api/v1/generate-session",{
 method:"POST",
 headers:{"Content-Type":"application/json"},
-body:JSON.stringify({
-device_id:getDeviceId(),
-language:lang,
-is_hook:isHook
-})
+body:JSON.stringify({device_id:getDeviceId(),language:lang,is_hook:isHook})
 });
 
 const data=await response.json().catch(()=>({}));
@@ -263,6 +309,7 @@ ultimoTextoGenerado=data.session_content||"";
 box.innerText=ultimoTextoGenerado;
 audioBtn.style.display="block";
 reproducirVozHumana();
+iniciarCirculoRespiratorio(lang);
 }else if(response.status===403){
 box.innerText=lang==="es"
 ?"Este dispositivo no tiene una suscripción activa. Active la suscripción de $15.99 para iniciar la sesión completa."
@@ -282,7 +329,6 @@ sessionBtn.disabled=false;
 function reproducirVozHumana(){
 if(!ultimoTextoGenerado)return;
 if(!("speechSynthesis" in window))return;
-
 window.speechSynthesis.cancel();
 
 const textoLimpio=ultimoTextoGenerado
@@ -308,41 +354,23 @@ box.innerText=mensaje;
 async function iniciarPagoStripe(){
 const btn=document.getElementById("btn-pay-text");
 const lang=document.getElementById("languageSelect").value;
-
 btn.disabled=true;
-
-mostrarEstadoPago(
-"wait",
-lang==="es"?"Conectando con Stripe...":
-lang==="pt"?"Conectando ao Stripe...":
-"Connecting to Stripe..."
-);
-
+mostrarEstadoPago("wait",lang==="es"?"Conectando con Stripe...":lang==="pt"?"Conectando ao Stripe...":"Connecting to Stripe...");
 try{
 const response=await fetch("/api/v1/create-checkout-session",{
 method:"POST",
 headers:{"Content-Type":"application/json"},
 body:JSON.stringify({device_id:getDeviceId()})
 });
-
 const data=await response.json().catch(()=>({}));
-
 if(response.ok&&data.checkout_url){
-mostrarEstadoPago(
-"wait",
-lang==="es"?"Abriendo el pago seguro de Stripe...":
-lang==="pt"?"Abrindo o pagamento seguro do Stripe...":
-"Opening secure Stripe checkout..."
-);
+mostrarEstadoPago("wait",lang==="es"?"Abriendo el pago seguro de Stripe...":lang==="pt"?"Abrindo o pagamento seguro do Stripe...":"Opening secure Stripe checkout...");
 window.location.href=data.checkout_url;
 return;
 }
-
 const detail=data.detail||"Stripe no pudo crear la sesión de pago.";
-
 mostrarEstadoPago("error",detail);
 alert(detail);
-
 }catch(err){
 const msg="Error de conexión con el servidor de pago: "+err.message;
 mostrarEstadoPago("error",msg);
@@ -355,54 +383,23 @@ btn.disabled=false;
 async function comprobarRegresoDeStripe(){
 const params=new URLSearchParams(window.location.search);
 const sessionId=params.get("session_id");
-
 if(!sessionId)return;
-
 const lang=document.getElementById("languageSelect").value;
-
-mostrarEstadoPago(
-"wait",
-lang==="es"?"Stripe recibió el pago. Confirmando la activación...":
-lang==="pt"?"O Stripe recebeu o pagamento. Confirmando a ativação...":
-"Stripe received the payment. Confirming activation..."
-);
-
+mostrarEstadoPago("wait",lang==="es"?"Stripe recibió el pago. Confirmando la activación...":lang==="pt"?"O Stripe recebeu o pagamento. Confirmando a ativação...":"Stripe received the payment. Confirming activation...");
 setTimeout(async()=>{
 try{
 const response=await fetch("/api/v1/generate-session",{
 method:"POST",
 headers:{"Content-Type":"application/json"},
-body:JSON.stringify({
-device_id:getDeviceId(),
-language:lang,
-is_hook:false
-})
+body:JSON.stringify({device_id:getDeviceId(),language:lang,is_hook:false})
 });
-
 if(response.ok){
-mostrarEstadoPago(
-"ok",
-lang==="es"?"Suscripción activa. Su dispositivo ya tiene acceso a las sesiones completas.":
-lang==="pt"?"Assinatura ativa. Seu dispositivo já tem acesso às sessões completas.":
-"Subscription active. Your device now has access to full sessions."
-);
+mostrarEstadoPago("ok",lang==="es"?"Suscripción activa. Su dispositivo ya tiene acceso a las sesiones completas.":lang==="pt"?"Assinatura ativa. Seu dispositivo já tem acesso às sessões completas.":"Subscription active. Your device now has access to full sessions.");
 }else{
-mostrarEstadoPago(
-"wait",
-lang==="es"
-?"El pago fue recibido. Stripe todavía está confirmando la suscripción. Espere unos segundos y vuelva a intentar la sesión."
-:lang==="pt"
-?"O pagamento foi recebido. O Stripe ainda está confirmando a assinatura. Aguarde alguns segundos e tente a sessão novamente."
-:"Payment was received. Stripe is still confirming the subscription. Wait a few seconds and try the session again."
-);
+mostrarEstadoPago("wait",lang==="es"?"El pago fue recibido. Stripe todavía está confirmando la suscripción. Espere unos segundos y vuelva a intentar la sesión.":lang==="pt"?"O pagamento foi recebido. O Stripe ainda está confirmando a assinatura. Aguarde alguns segundos e tente a sessão novamente.":"Payment was received. Stripe is still confirming the subscription. Wait a few seconds and try the session again.");
 }
 }catch(err){
-mostrarEstadoPago(
-"error",
-lang==="es"?"No pudimos comprobar la activación todavía.":
-lang==="pt"?"Ainda não foi possível verificar a ativação.":
-"We could not verify activation yet."
-);
+mostrarEstadoPago("error",lang==="es"?"No pudimos comprobar la activación todavía.":lang==="pt"?"Ainda não foi possível verificar a ativação.":"We could not verify activation yet.");
 }
 },1500);
 }
