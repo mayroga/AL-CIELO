@@ -1,974 +1,244 @@
-# main.py — AL CIELO | May Roga LLC
-# v3.0.1
-# FastAPI + Stripe Checkout + SQLite + Gemini
-# Autorización real: Stripe Webhook -> SQLite -> acceso
-
-from __future__ import annotations
-
 import os
 import sqlite3
-from datetime import datetime,timezone
-from typing import Optional
-
+from fastapi import FastAPI,HTTPException,Request,Header
+from fastapi.responses import HTMLResponse,FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 import stripe
-from fastapi import FastAPI,HTTPException,Request
-from fastapi.responses import HTMLResponse,JSONResponse
-from pydantic import BaseModel
 from google import genai
+from google.genai import types
 
+app=FastAPI(title="AL CIELO - Production Engine",version="3.0.1")
+app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_credentials=True,allow_methods=["*"],allow_headers=["*"])
 
-VERSION="3.0.1"
-APP_NAME="AL CIELO"
-DB_FILE=os.getenv("AL_CIELO_DB","alcielo_licences.db")
-
-# ============================================================
-# STRIPE
-# ============================================================
-
-STRIPE_SECRET_KEY=os.getenv("STRIPE_SECRET_KEY","").strip()
-STRIPE_PRICE_ID=os.getenv("STRIPE_PRICE_ID","").strip()
-STRIPE_WEBHOOK_SECRET=os.getenv("STRIPE_WEBHOOK_SECRET","").strip()
-
-if STRIPE_SECRET_KEY:
-    stripe.api_key=STRIPE_SECRET_KEY
-
-# ============================================================
-# ADMIN
-# Compatible con ADMIN_USER/ADMIN_PASS y
-# ADMIN_USERNAME/ADMIN_PASSWORD
-# ============================================================
-
-ADMIN_USER=(
-    os.getenv("ADMIN_USER")
-    or os.getenv("ADMIN_USERNAME")
-    or ""
-).strip()
-
-ADMIN_PASS=(
-    os.getenv("ADMIN_PASS")
-    or os.getenv("ADMIN_PASSWORD")
-    or ""
-).strip()
-
-# ============================================================
-# GEMINI
-# ============================================================
-
-GEMINI_API_KEY=os.getenv("GEMINI_API_KEY","").strip()
-GEMINI_MODEL=os.getenv(
-    "GEMINI_MODEL",
-    "gemini-2.5-flash"
-).strip()
-
-gemini_client=None
-
-if GEMINI_API_KEY:
-    try:
-        gemini_client=genai.Client(api_key=GEMINI_API_KEY)
-    except Exception:
-        gemini_client=None
-
-# ============================================================
-# FASTAPI
-# ============================================================
-
-app=FastAPI(
-    title=APP_NAME,
-    version=VERSION
-)
-
-# ============================================================
-# DATABASE
-# ============================================================
+stripe.api_key=os.getenv("STRIPE_SECRET_KEY")
+STRIPE_PRICE_ID=os.getenv("STRIPE_PRICE_ID")
+STRIPE_WEBHOOK_SECRET=os.getenv("STRIPE_WEBHOOK_SECRET")
+ADMIN_USER=os.getenv("ADMIN_USER") or os.getenv("ADMIN_USERNAME")
+ADMIN_PASS=os.getenv("ADMIN_PASS") or os.getenv("ADMIN_PASSWORD")
+DB_FILE="alcielo_licences.db"
 
 def get_db():
-    conn=sqlite3.connect(DB_FILE,timeout=30)
+    conn=sqlite3.connect(DB_FILE)
     conn.row_factory=sqlite3.Row
     return conn
 
-
 def init_db():
     conn=get_db()
-
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS authorized_devices(
-            device_id TEXT PRIMARY KEY,
-            status TEXT NOT NULL DEFAULT 'active',
-            stripe_customer_id TEXT,
-            stripe_subscription_id TEXT,
-            access_type TEXT NOT NULL DEFAULT 'subscription',
-            updated_at TEXT NOT NULL
-        )
-    """)
-
-    # Migración defensiva para bases creadas con versiones anteriores.
-    columns={
-        row["name"]
-        for row in conn.execute(
-            "PRAGMA table_info(authorized_devices)"
-        ).fetchall()
-    }
-
-    if "stripe_customer_id" not in columns:
-        conn.execute("""
-            ALTER TABLE authorized_devices
-            ADD COLUMN stripe_customer_id TEXT
-        """)
-
-    if "stripe_subscription_id" not in columns:
-        conn.execute("""
-            ALTER TABLE authorized_devices
-            ADD COLUMN stripe_subscription_id TEXT
-        """)
-
-    if "access_type" not in columns:
-        conn.execute("""
-            ALTER TABLE authorized_devices
-            ADD COLUMN access_type TEXT NOT NULL DEFAULT 'subscription'
-        """)
-
-    if "updated_at" not in columns:
-        conn.execute("""
-            ALTER TABLE authorized_devices
-            ADD COLUMN updated_at TEXT
-        """)
-
+    conn.execute("""CREATE TABLE IF NOT EXISTS authorized_devices(
+        device_id TEXT PRIMARY KEY,
+        status TEXT NOT NULL DEFAULT 'active',
+        stripe_customer_id TEXT,
+        stripe_subscription_id TEXT,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""")
     conn.commit()
     conn.close()
 
+def authorize_device(device_id,customer_id=None,subscription_id=None):
+    if not device_id:return
+    conn=get_db()
+    conn.execute("""INSERT INTO authorized_devices
+        (device_id,status,stripe_customer_id,stripe_subscription_id,updated_at)
+        VALUES(?,'active',?,?,CURRENT_TIMESTAMP)
+        ON CONFLICT(device_id) DO UPDATE SET
+        status='active',
+        stripe_customer_id=excluded.stripe_customer_id,
+        stripe_subscription_id=excluded.stripe_subscription_id,
+        updated_at=CURRENT_TIMESTAMP""",(device_id,customer_id,subscription_id))
+    conn.commit()
+    conn.close()
+
+def check_device_authorization(device_id):
+    if not device_id:return False
+    conn=get_db()
+    row=conn.execute("SELECT status FROM authorized_devices WHERE device_id=?",(device_id,)).fetchone()
+    conn.close()
+    return bool(row and row["status"]=="active")
+
+def deactivate_device_by_subscription(subscription_id):
+    if not subscription_id:return
+    conn=get_db()
+    conn.execute("UPDATE authorized_devices SET status='inactive',updated_at=CURRENT_TIMESTAMP WHERE stripe_subscription_id=?",(subscription_id,))
+    conn.commit()
+    conn.close()
 
 init_db()
 
-# ============================================================
-# UTILIDADES
-# ============================================================
+try:
+    gemini_client=genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+except Exception:
+    gemini_client=None
 
-def utc_now():
-    return datetime.now(timezone.utc).isoformat()
+SYSTEM_WELLNESS_PROMPT="""
+You are the exclusive wellness advisor for the platform "AL CIELO", designed for adults aged 50 and over.
+Your instructions must be direct, extremely concise, warm, and highly effective. The user listens via voice.
 
+ABSOLUTE RULES:
+1. LEGAL SAFETY BLOCK: Every session strictly starts by stating that this is a general wellness service, not medical advice, and that each person participates at their own discretion and comfort.
+2. DIRECT INSTRUCTION FORMAT: Short, clear movements or breathing steps suitable for active people, wheelchair users, or bedridden individuals.
+3. Zero medical jargon. Speak as a lifestyle and wellness specialist.
+"""
 
-def clean_device_id(device_id:str)->str:
-    device_id=(device_id or "").strip()
-
-    if not device_id:
-        raise HTTPException(
-            status_code=400,
-            detail="device_id is required."
-        )
-
-    if len(device_id)>200:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid device_id."
-        )
-
-    return device_id
-
-
-def authorize_device(
-    device_id:str,
-    stripe_customer_id:Optional[str]=None,
-    stripe_subscription_id:Optional[str]=None,
-    access_type:str="subscription"
-):
-    device_id=clean_device_id(device_id)
-
-    conn=get_db()
-
-    conn.execute("""
-        INSERT INTO authorized_devices(
-            device_id,
-            status,
-            stripe_customer_id,
-            stripe_subscription_id,
-            access_type,
-            updated_at
-        )
-        VALUES(?,?,?,?,?,?)
-        ON CONFLICT(device_id)
-        DO UPDATE SET
-            status='active',
-            stripe_customer_id=COALESCE(
-                excluded.stripe_customer_id,
-                authorized_devices.stripe_customer_id
-            ),
-            stripe_subscription_id=COALESCE(
-                excluded.stripe_subscription_id,
-                authorized_devices.stripe_subscription_id
-            ),
-            access_type=excluded.access_type,
-            updated_at=excluded.updated_at
-    """,(
-        device_id,
-        "active",
-        stripe_customer_id,
-        stripe_subscription_id,
-        access_type,
-        utc_now()
-    ))
-
-    conn.commit()
-    conn.close()
-
-
-def check_device_authorization(device_id:str)->bool:
-    device_id=clean_device_id(device_id)
-
-    conn=get_db()
-
-    row=conn.execute("""
-        SELECT status
-        FROM authorized_devices
-        WHERE device_id=?
-        LIMIT 1
-    """,(device_id,)).fetchone()
-
-    conn.close()
-
-    return bool(
-        row and row["status"]=="active"
-    )
-
-
-def deactivate_device_by_subscription(subscription_id:str):
-    if not subscription_id:
-        return
-
-    conn=get_db()
-
-    conn.execute("""
-        UPDATE authorized_devices
-        SET status='inactive',
-            updated_at=?
-        WHERE stripe_subscription_id=?
-    """,(utc_now(),subscription_id))
-
-    conn.commit()
-    conn.close()
-
-
-def get_device_record(device_id:str):
-    device_id=clean_device_id(device_id)
-
-    conn=get_db()
-
-    row=conn.execute("""
-        SELECT *
-        FROM authorized_devices
-        WHERE device_id=?
-        LIMIT 1
-    """,(device_id,)).fetchone()
-
-    conn.close()
-
-    return row
-
-
-# ============================================================
-# PYDANTIC MODELS
-# ============================================================
-
-class DeviceRequest(BaseModel):
-    device_id:str
-
-
-class CourtesyRequest(BaseModel):
-    username:str
-    password:str
-    device_id:str
-
-
-class SessionRequest(BaseModel):
-    device_id:str
-    language:str="es"
-    is_hook:bool=False
-
-
-# ============================================================
-# HEALTH
-# ============================================================
-
-@app.get("/")
-def root():
-    return {
-        "app":APP_NAME,
-        "version":VERSION,
-        "status":"online"
-    }
-
-
-@app.get("/health")
-def health():
-    return {
-        "status":"ok",
-        "app":APP_NAME,
-        "version":VERSION
-    }
-
-
-# ============================================================
-# ADMIN / CORTESÍA
-# ============================================================
+@app.get("/",response_class=FileResponse)
+async def serve_frontend():
+    return "index.html"
 
 @app.post("/api/v1/authorize-courtesy")
-def authorize_courtesy(data:CourtesyRequest):
-
+async def authorize_courtesy(request:Request):
+    body=await request.json()
+    username=body.get("username","").strip()
+    password=body.get("password","").strip()
+    device_id=body.get("device_id","").strip()
     if not ADMIN_USER or not ADMIN_PASS:
-        raise HTTPException(
-            status_code=503,
-            detail="Admin access is not configured."
-        )
-
-    if data.username.strip()!=ADMIN_USER or data.password!=ADMIN_PASS:
-        raise HTTPException(
-            status_code=401,
-            detail="Incorrect credentials."
-        )
-
-    device_id=clean_device_id(data.device_id)
-
-    authorize_device(
-        device_id=device_id,
-        access_type="courtesy"
-    )
-
-    return {
-        "ok":True,
-        "authorized":True,
-        "access_type":"courtesy"
-    }
-
-
-# ============================================================
-# STRIPE CHECKOUT
-# ============================================================
+        raise HTTPException(status_code=500,detail="Admin credentials not configured in Render environment variables.")
+    if username==ADMIN_USER and password==ADMIN_PASS and device_id:
+        authorize_device(device_id)
+        return {"status":"success"}
+    raise HTTPException(status_code=401,detail="Invalid credentials.")
 
 @app.post("/api/v1/create-checkout-session")
-def create_checkout_session(
-    data:DeviceRequest,
-    request:Request
-):
-    device_id=clean_device_id(data.device_id)
-
-    if not STRIPE_SECRET_KEY:
-        raise HTTPException(
-            status_code=503,
-            detail="Stripe is not configured: STRIPE_SECRET_KEY is missing."
-        )
-
-    if not STRIPE_PRICE_ID:
-        raise HTTPException(
-            status_code=503,
-            detail="Stripe is not configured: STRIPE_PRICE_ID is missing."
-        )
-
-    if not stripe.api_key:
-        stripe.api_key=STRIPE_SECRET_KEY
-
-    # Determina correctamente la URL pública de Render.
-    forwarded_proto=request.headers.get(
-        "x-forwarded-proto",
-        "https"
-    )
-
-    host=request.headers.get("host")
-
-    if not host:
-        raise HTTPException(
-            status_code=500,
-            detail="Unable to determine application host."
-        )
-
-    base_url=f"{forwarded_proto}://{host}"
-
+async def create_checkout_session(request:Request):
     try:
-        # IMPORTANTE:
-        # NO usar payment_method_types.
-        # Stripe administra los métodos de pago desde
-        # Dashboard -> Payment methods.
+        body=await request.json()
+        device_id=str(body.get("device_id","")).strip()
+        if not device_id:
+            raise HTTPException(status_code=400,detail="Device ID required.")
+        if not stripe.api_key:
+            raise HTTPException(status_code=500,detail="STRIPE_SECRET_KEY is missing in Render.")
+        if not STRIPE_PRICE_ID:
+            raise HTTPException(status_code=500,detail="STRIPE_PRICE_ID is missing in Render.")
+        host=request.headers.get("host") or "al-cielo.onrender.com"
+        base_url=f"https://{host}"
         checkout_session=stripe.checkout.Session.create(
-            line_items=[
-                {
-                    "price":STRIPE_PRICE_ID,
-                    "quantity":1
-                }
-            ],
+            line_items=[{"price":STRIPE_PRICE_ID,"quantity":1}],
             mode="subscription",
-            success_url=(
-                f"{base_url}/success"
-                "?session_id={CHECKOUT_SESSION_ID}"
-            ),
+            success_url=f"{base_url}/success?session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{base_url}/cancel",
-            metadata={
-                "device_id":device_id
-            }
+            metadata={"device_id":device_id}
         )
-
-        return {
-            "ok":True,
-            "checkout_url":checkout_session.url,
-            "session_id":checkout_session.id
-        }
-
+        return {"status":"success","checkout_url":checkout_session.url}
+    except HTTPException:
+        raise
     except stripe.error.StripeError as e:
-        message=str(e)
-
-        raise HTTPException(
-            status_code=502,
-            detail=f"Stripe error: {message}"
-        )
-
+        raise HTTPException(status_code=502,detail=f"Stripe error: {str(e)}")
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Checkout error: {str(e)}"
-        )
-
-
-# ============================================================
-# STRIPE WEBHOOK
-# ============================================================
+        raise HTTPException(status_code=500,detail=f"Checkout error: {str(e)}")
 
 @app.post("/webhook/stripe")
-async def stripe_webhook(request:Request):
-
+async def stripe_webhook(request:Request,stripe_signature:str=Header(default=None)):
     payload=await request.body()
-
     if not STRIPE_WEBHOOK_SECRET:
-        # Nunca conceder acceso sin verificar el webhook.
-        raise HTTPException(
-            status_code=503,
-            detail="STRIPE_WEBHOOK_SECRET is not configured."
-        )
-
-    signature=request.headers.get(
-        "stripe-signature"
-    )
-
-    if not signature:
-        raise HTTPException(
-            status_code=400,
-            detail="Missing Stripe signature."
-        )
-
+        raise HTTPException(status_code=500,detail="STRIPE_WEBHOOK_SECRET is missing in Render.")
+    if not stripe_signature:
+        raise HTTPException(status_code=400,detail="Missing Stripe-Signature header.")
     try:
-        event=stripe.Webhook.construct_event(
-            payload,
-            signature,
-            STRIPE_WEBHOOK_SECRET
-        )
-
+        event=stripe.Webhook.construct_event(payload,stripe_signature,STRIPE_WEBHOOK_SECRET)
     except ValueError:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid webhook payload."
-        )
-
+        raise HTTPException(status_code=400,detail="Invalid webhook payload.")
     except stripe.error.SignatureVerificationError:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid Stripe webhook signature."
-        )
+        raise HTTPException(status_code=400,detail="Invalid Stripe webhook signature.")
+    except Exception as e:
+        raise HTTPException(status_code=400,detail=f"Webhook error: {str(e)}")
 
-    event_type=event["type"]
-    obj=event["data"]["object"]
-
-    # --------------------------------------------------------
-    # CHECKOUT COMPLETADO
-    # --------------------------------------------------------
+    event_type=event.get("type")
 
     if event_type=="checkout.session.completed":
-
-        metadata=obj.get("metadata") or {}
+        session=event["data"]["object"]
+        metadata=session.get("metadata") or {}
         device_id=metadata.get("device_id")
-
+        customer_id=session.get("customer")
+        subscription_id=session.get("subscription")
         if device_id:
-            customer_id=obj.get("customer")
-            subscription_id=obj.get("subscription")
+            authorize_device(device_id,customer_id,subscription_id)
 
-            authorize_device(
-                device_id=device_id,
-                stripe_customer_id=customer_id,
-                stripe_subscription_id=subscription_id,
-                access_type="subscription"
-            )
+    elif event_type in ("customer.subscription.deleted","customer.subscription.unpaid"):
+        subscription=event["data"]["object"]
+        deactivate_device_by_subscription(subscription.get("id"))
 
-    # --------------------------------------------------------
-    # SUSCRIPCIÓN CANCELADA
-    # --------------------------------------------------------
-
-    elif event_type=="customer.subscription.deleted":
-
-        subscription_id=obj.get("id")
-
-        if subscription_id:
-            deactivate_device_by_subscription(
-                subscription_id
-            )
-
-    # --------------------------------------------------------
-    # SUSCRIPCIÓN SIN PAGO
-    # --------------------------------------------------------
-
-    elif event_type=="customer.subscription.unpaid":
-
-        subscription_id=obj.get("id")
-
-        if subscription_id:
-            deactivate_device_by_subscription(
-                subscription_id
-            )
-
-    return {
-        "received":True
-    }
-
-
-# ============================================================
-# SUCCESS
-# ============================================================
+    return {"status":"success"}
 
 @app.get("/success",response_class=HTMLResponse)
-def success(session_id:Optional[str]=None):
+async def payment_success(session_id:str=None):
+    verified=False
+    if session_id:
+        try:
+            session=stripe.checkout.Session.retrieve(session_id)
+            if session.get("payment_status")=="paid":
+                verified=True
+        except Exception:
+            verified=False
 
-    if not session_id:
-        return HTMLResponse("""
-<!doctype html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>AL CIELO</title>
-</head>
-<body style="
-font-family:system-ui;
-background:#0f172a;
-color:white;
-padding:40px;
-text-align:center;
-">
-<h1>AL CIELO</h1>
-<p>No se recibió el identificador de la sesión de pago.</p>
-<p>Regrese a AL CIELO e intente nuevamente.</p>
-</body>
-</html>
-""")
+    if verified:
+        return """<html><body style="background:#0f172a;color:white;text-align:center;padding-top:60px;font-family:sans-serif;">
+        <h1 style="color:#4ade80;">Payment Received</h1>
+        <p>Stripe received your payment.</p>
+        <p>Your access will be activated after Stripe confirms the subscription.</p>
+        <a href="/" style="display:inline-block;margin-top:20px;padding:12px 24px;background:#0284c7;color:white;text-decoration:none;border-radius:8px;font-weight:bold;">Return to AL CIELO</a>
+        </body></html>"""
 
-    if not STRIPE_SECRET_KEY:
-        return HTMLResponse("""
-<!doctype html>
-<html>
-<body style="
-font-family:system-ui;
-background:#0f172a;
-color:white;
-padding:40px;
-text-align:center;
-">
-<h1>AL CIELO</h1>
-<p>Stripe no está configurado.</p>
-</body>
-</html>
-""")
-
-    try:
-        checkout_session=stripe.checkout.Session.retrieve(
-            session_id
-        )
-
-        payment_status=checkout_session.get(
-            "payment_status"
-        )
-
-        if payment_status=="paid":
-            message="""
-<p>
-Stripe recibió correctamente el pago.
-</p>
-<p>
-La activación de AL CIELO se confirma mediante el sistema de Stripe.
-Puede regresar a la aplicación y comenzar su sesión.
-</p>
-"""
-        else:
-            message="""
-<p>
-Stripe recibió la sesión, pero el pago todavía no aparece
-como confirmado.
-</p>
-<p>
-Regrese a AL CIELO y espere unos segundos antes de intentar
-la sesión completa nuevamente.
-</p>
-"""
-
-    except stripe.error.StripeError as e:
-        message=f"""
-<p>
-No fue posible consultar el estado del pago.
-</p>
-<p>
-{str(e)}
-</p>
-"""
-
-    return HTMLResponse(f"""
-<!doctype html>
-<html lang="es">
-<head>
-<meta charset="utf-8">
-<meta name="viewport"
-content="width=device-width,initial-scale=1">
-<title>AL CIELO - Pago</title>
-</head>
-<body style="
-font-family:system-ui,-apple-system,sans-serif;
-background:#0f172a;
-color:#f8fafc;
-padding:30px;
-text-align:center;
-min-height:100vh;
-">
-<div style="
-max-width:600px;
-margin:50px auto;
-background:#1e293b;
-padding:35px;
-border-radius:16px;
-border:1px solid #334155;
-">
-<h1 style="color:#38bdf8">AL CIELO</h1>
-<h2>Estado del pago</h2>
-{message}
-<p style="margin-top:30px">
-<a href="/"
-style="
-display:inline-block;
-padding:14px 24px;
-background:#0d9488;
-color:white;
-text-decoration:none;
-border-radius:8px;
-font-weight:bold;
-">
-Regresar a AL CIELO
-</a>
-</p>
-</div>
-</body>
-</html>
-""")
-
-
-# ============================================================
-# CANCEL
-# ============================================================
+    return """<html><body style="background:#0f172a;color:white;text-align:center;padding-top:60px;font-family:sans-serif;">
+    <h1 style="color:#f87171;">Payment Not Confirmed</h1>
+    <p>We could not verify the payment with Stripe.</p>
+    <a href="/" style="display:inline-block;margin-top:20px;padding:12px 24px;background:#0284c7;color:white;text-decoration:none;border-radius:8px;font-weight:bold;">Return to AL CIELO</a>
+    </body></html>"""
 
 @app.get("/cancel",response_class=HTMLResponse)
-def cancel():
-
-    return HTMLResponse("""
-<!doctype html>
-<html lang="es">
-<head>
-<meta charset="utf-8">
-<meta name="viewport"
-content="width=device-width,initial-scale=1">
-<title>AL CIELO - Pago cancelado</title>
-</head>
-<body style="
-font-family:system-ui,-apple-system,sans-serif;
-background:#0f172a;
-color:#f8fafc;
-padding:30px;
-text-align:center;
-min-height:100vh;
-">
-<div style="
-max-width:600px;
-margin:50px auto;
-background:#1e293b;
-padding:35px;
-border-radius:16px;
-border:1px solid #334155;
-">
-<h1 style="color:#38bdf8">AL CIELO</h1>
-<h2>Pago cancelado</h2>
-<p>
-No se realizó la activación de la suscripción.
-</p>
-<p>
-Puede regresar cuando esté listo.
-</p>
-<p style="margin-top:30px">
-<a href="/"
-style="
-display:inline-block;
-padding:14px 24px;
-background:#0284c7;
-color:white;
-text-decoration:none;
-border-radius:8px;
-font-weight:bold;
-">
-Regresar a AL CIELO
-</a>
-</p>
-</div>
-</body>
-</html>
-""")
-
-
-# ============================================================
-# GENERACIÓN DE SESIONES
-# ============================================================
-
-def fallback_session(language:str)->str:
-
-    if language=="pt":
-        return """AL CIELO — Sessão de Bem-estar
-
-Comece de forma confortável.
-
-Respire lentamente.
-Observe como seu corpo se sente neste momento.
-
-Faça movimentos suaves dentro do seu próprio conforto.
-
-Não é necessário forçar o movimento.
-
-Continue respirando com calma.
-
-Finalize a sessão descansando por alguns instantes."""
-
-    if language=="en":
-        return """AL CIELO — Wellness Session
-
-Begin in a comfortable position.
-
-Breathe slowly.
-Notice how your body feels right now.
-
-Make gentle movements within your own comfort.
-
-There is no need to force any movement.
-
-Continue breathing calmly.
-
-Finish the session by resting for a few moments."""
-
-    return """AL CIELO — Sesión de Bienestar
-
-Comience en una posición cómoda.
-
-Respire lentamente.
-Observe cómo se siente su cuerpo en este momento.
-
-Realice movimientos suaves dentro de su propia comodidad.
-
-No es necesario forzar ningún movimiento.
-
-Continúe respirando con calma.
-
-Termine la sesión descansando durante unos momentos."""
-
-
-def generate_with_gemini(language:str)->str:
-
-    if not gemini_client:
-        return fallback_session(language)
-
-    if language=="pt":
-        instruction="""
-Crie uma sessão simples de bem-estar geral de aproximadamente
-10 minutos para uma pessoa com 50 anos ou mais.
-
-Use linguagem humana, tranquila e fácil de seguir.
-Inclua respiração e movimentos suaves.
-Não faça diagnóstico.
-Não faça afirmações médicas.
-Não use linguagem clínica.
-Não diga que o exercício trata ou cura doenças.
-
-A pessoa pode estar sentada, em pé ou ter mobilidade reduzida.
-Ofereça instruções que possam ser adaptadas ao conforto individual.
-
-Responda somente com a sessão.
-"""
-
-    elif language=="en":
-        instruction="""
-Create a simple general wellness session of approximately
-10 minutes for a person aged 50 or older.
-
-Use calm, human, easy-to-follow language.
-Include breathing and gentle movements.
-Do not diagnose.
-Do not make medical claims.
-Do not use clinical language.
-Do not say that an exercise treats or cures diseases.
-
-The person may be seated, standing, or have reduced mobility.
-Give instructions that can be adapted to the person's comfort.
-
-Return only the session.
-"""
-
-    else:
-        instruction="""
-Crea una sesión sencilla de bienestar general de aproximadamente
-10 minutos para una persona de 50 años o más.
-
-Usa lenguaje humano, tranquilo y fácil de seguir.
-Incluye respiración y movimientos suaves.
-No hagas diagnósticos.
-No hagas afirmaciones médicas.
-No uses lenguaje clínico.
-No digas que un ejercicio trata o cura enfermedades.
-
-La persona puede estar sentada, de pie o tener movilidad reducida.
-Da instrucciones que puedan adaptarse a la comodidad de cada persona.
-
-Responde solamente con la sesión.
-"""
-
-    try:
-        response=gemini_client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=instruction
-        )
-
-        text=getattr(response,"text",None)
-
-        if text and text.strip():
-            return text.strip()
-
-    except Exception:
-        pass
-
-    return fallback_session(language)
-
+async def payment_cancel():
+    return """<html><body style="background:#0f172a;color:white;text-align:center;padding-top:60px;font-family:sans-serif;">
+    <h1 style="color:#f87171;">Payment Canceled</h1>
+    <p>No subscription was activated.</p>
+    <a href="/" style="display:inline-block;margin-top:20px;padding:12px 24px;background:#0284c7;color:white;text-decoration:none;border-radius:8px;font-weight:bold;">Return Home</a>
+    </body></html>"""
 
 @app.post("/api/v1/generate-session")
-def generate_session(data:SessionRequest):
+async def generate_session(request:Request):
+    try:
+        body=await request.json()
+        device_id=str(body.get("device_id","")).strip()
+        language=body.get("language","es")
+        is_hook=bool(body.get("is_hook",False))
+        if not device_id:
+            raise HTTPException(status_code=400,detail="Device ID required.")
+        if not is_hook and not check_device_authorization(device_id):
+            raise HTTPException(status_code=403,detail="Subscription required.")
 
-    device_id=clean_device_id(data.device_id)
+        duration_desc="30-second free preview" if is_hook else "full 10-minute guided wellness session"
+        lang_names={"es":"Spanish","en":"English","pt":"Portuguese"}
+        selected_lang_name=lang_names.get(language,"Spanish")
+        prompt=f"""
+Generate a [{duration_desc}] strictly in [{selected_lang_name}]
+for adults aged 50 and over.
+Direct, warm, human instructions focusing on gentle mobility and breathing.
+CRITICAL:
+Output ONLY plain conversational sentences in {selected_lang_name}.
+Do NOT mix languages.
+Do NOT include any intro text.
+"""
+        response_text=""
+        if gemini_client:
+            try:
+                response=gemini_client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM_WELLNESS_PROMPT,
+                        temperature=0.6
+                    )
+                )
+                response_text=response.text or ""
+            except Exception:
+                response_text=""
 
-    language=(data.language or "es").lower()
+        if not response_text:
+            if language=="en":
+                response_text="Welcome to AL CIELO. This session is for general well-being. Please take a comfortable posture. Inhale deeply through your nose, and exhale slowly through your mouth. Gently move your toes and ankles, feeling a soft, natural circulation."
+            elif language=="pt":
+                response_text="Bem-vindo ao AL CIELO. Esta sessão é para o seu bem-estar geral. Por favor, adote uma postura confortável. Inspire profundamente pelo nariz e expire devagar pela boca."
+            else:
+                response_text="Bienvenido a AL CIELO. Esta sesión es de bienestar general. Tome una postura cómoda. Inhale profundamente por la nariz y exhale despacio por la boca."
 
-    if language not in {"es","en","pt"}:
-        language="es"
-
-    # --------------------------------------------------------
-    # MUESTRA GRATUITA
-    # --------------------------------------------------------
-
-    if data.is_hook:
-        preview={
-            "es":"""AL CIELO — Muestra gratuita
-
-Respire lentamente durante unos segundos.
-
-Relaje los hombros.
-
-Realice un movimiento suave y cómodo.
-
-Esta es una pequeña muestra de cómo funciona
-una sesión guiada de AL CIELO.""",
-
-            "en":"""AL CIELO — Free Preview
-
-Breathe slowly for a few seconds.
-
-Relax your shoulders.
-
-Make one gentle and comfortable movement.
-
-This is a short preview of how an
-AL CIELO guided session works.""",
-
-            "pt":"""AL CIELO — Amostra gratuita
-
-Respire lentamente durante alguns segundos.
-
-Relaxe os ombros.
-
-Faça um movimento suave e confortável.
-
-Esta é uma pequena amostra de como funciona
-uma sessão guiada do AL CIELO."""
-        }
-
-        return {
-            "ok":True,
-            "authorized":False,
-            "is_hook":True,
-            "session_content":preview[language]
-        }
-
-    # --------------------------------------------------------
-    # SESIÓN COMPLETA
-    # --------------------------------------------------------
-
-    if not check_device_authorization(device_id):
-
-        raise HTTPException(
-            status_code=403,
-            detail=(
-                "Este dispositivo no tiene una suscripción activa. "
-                "Active la suscripción de $15.99 para iniciar "
-                "la sesión completa."
-            )
-        )
-
-    content=generate_with_gemini(language)
-
-    return {
-        "ok":True,
-        "authorized":True,
-        "is_hook":False,
-        "session_content":content,
-        "language":language,
-        "version":VERSION
-    }
-
-
-# ============================================================
-# CONSULTA DE ESTADO DEL DISPOSITIVO
-# ============================================================
-
-@app.post("/api/v1/check-access")
-def check_access(data:DeviceRequest):
-
-    device_id=clean_device_id(data.device_id)
-
-    row=get_device_record(device_id)
-
-    if not row:
-        return {
-            "authorized":False,
-            "status":"not_found"
-        }
-
-    return {
-        "authorized":row["status"]=="active",
-        "status":row["status"],
-        "access_type":row["access_type"]
-    }
-
-
-# ============================================================
-# EJECUCIÓN LOCAL
-# ============================================================
-
-if __name__=="__main__":
-    import uvicorn
-
-    port=int(os.getenv("PORT","8000"))
-
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=port,
-        reload=False
-    )
+        return {"status":"success","session_content":response_text}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500,detail=str(e))
