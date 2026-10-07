@@ -17,6 +17,55 @@
             justify-content: flex-start;
             min-height: 100vh;
         }
+        /* Esquina superior discreta para acceso gratuito */
+        .admin-corner {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            font-size: 0.75rem;
+            color: #334155;
+            cursor: pointer;
+            user-select: none;
+            transition: color 0.2s;
+        }
+        .admin-corner:hover { color: #64748b; }
+        
+        #hidden-auth-box {
+            display: none;
+            position: absolute;
+            top: 35px;
+            right: 15px;
+            background: #1e293b;
+            border: 1px solid #475569;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            z-index: 100;
+            width: 200px;
+        }
+        #hidden-auth-box input {
+            width: 100%;
+            padding: 6px;
+            margin-bottom: 6px;
+            background: #0f172a;
+            border: 1px solid #334155;
+            color: white;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            box-sizing: border-box;
+        }
+        #hidden-auth-box button {
+            width: 100%;
+            padding: 6px;
+            background: #0284c7;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: bold;
+        }
+
         .container {
             max-width: 650px;
             width: 100%;
@@ -26,8 +75,9 @@
             box-shadow: 0 10px 25px rgba(0,0,0,0.4);
             text-align: left;
             border: 1px solid #334155;
-            margin-top: 20px;
+            margin-top: 40px;
             margin-bottom: 20px;
+            position: relative;
         }
         h1 { color: #38bdf8; font-size: 2.5rem; margin-bottom: 5px; text-align: center; }
         p.subtitle { font-size: 1.2rem; color: #94a3b8; margin-bottom: 20px; text-align: center; font-weight: bold; }
@@ -99,6 +149,15 @@
     </style>
 </head>
 <body>
+
+    <!-- Acceso discreto de cortesía en esquina -->
+    <div class="admin-corner" onclick="toggleAuthBox()">⚙️</div>
+    <div id="hidden-auth-box">
+        <input type="text" id="accessUser" placeholder="User">
+        <input type="password" id="accessPass" placeholder="Password">
+        <button onclick="realizarAccesoCortesia()">Entrar Gratis</button>
+    </div>
+
     <div class="container">
         <h1 id="t-title">AL CIELO</h1>
         <p id="t-subtitle" class="subtitle">Bienestar, Movilidad y Conexión Diaria (50+)</p>
@@ -126,7 +185,7 @@
 
             <button id="btn-prev" class="btn btn-preview" onclick="obtenerContenido(true)">▶️ Ver y Escuchar Muestra Gratuita (30 Segundos)</button>
             <button id="btn-sess" class="btn btn-session" onclick="obtenerContenido(false)">🔊 Iniciar Sesión Completa de Bienestar</button>
-            <button id="audioControlBtn" class="btn btn-audio" onclick="reproducirVoz()">🗣️ Volver a escuchar en voz alta</button>
+            <button id="audioControlBtn" class="btn btn-audio" onclick="reproducirVozHumana()">🗣️ Volver a escuchar en voz alta</button>
         </div>
 
         <div class="control-group" style="background: #111827; padding: 15px; border-radius: 8px; text-align: center; border: 1px dashed #374151;">
@@ -232,6 +291,11 @@
             document.getElementById("t-legal").innerHTML = t.legal;
         }
 
+        function toggleAuthBox() {
+            const box = document.getElementById("hidden-auth-box");
+            box.style.display = box.style.display === "block" ? "none" : "block";
+        }
+
         function getDeviceId() {
             let deviceId = localStorage.getItem("al_cielo_device_id");
             if (!deviceId) {
@@ -239,6 +303,20 @@
                 localStorage.setItem("al_cielo_device_id", deviceId);
             }
             return deviceId;
+        }
+
+        async function realizarAccesoCortesia() {
+            const u = document.getElementById("accessUser").value.trim();
+            const p = document.getElementById("accessPass").value.trim();
+            
+            // Credenciales de cortesía configurables
+            if (u === "admin" && p === "alcielo2026") {
+                localStorage.setItem("al_cielo_auth_" + getDeviceId(), "authorized");
+                alert("Acceso gratuito concedido para este dispositivo.");
+                document.getElementById("hidden-auth-box").style.display = "none";
+            } else {
+                alert("Datos incorrectos.");
+            }
         }
 
         async function obtenerContenido(isHook) {
@@ -267,7 +345,7 @@
                     ultimoTextoGenerado = data.session_content;
                     box.innerText = ultimoTextoGenerado;
                     audioBtn.style.display = "block";
-                    reproducirVoz();
+                    reproducirVozHumana();
                 } else if (response.status === 403) {
                     box.innerText = lang === 'es' ? "Este dispositivo requiere una suscripción activa de $15.99 para desbloquear la sesión completa." : (lang === 'pt' ? "Este dispositivo requer uma assinatura ativa de $15.99 para desbloquear a sessão completa." : "This device requires an active $15.99 subscription to unlock the full session.");
                 } else {
@@ -278,14 +356,27 @@
             }
         }
 
-        function reproducirVoz() {
+        function reproducirVozHumanana(texto) {
             if (!ultimoTextoGenerado) return;
             window.speechSynthesis.cancel();
-            const utterance = new SpeechSynthesisUtterance(ultimoTextoGenerado);
+            
+            // FILTRO ESTRICTO: Elimina comillas, corchetes, asteriscos, guiones y convierte signos en pausas de voz natural
+            let textoLimpio = ultimoTextoGenerado
+                .replace(/[*#_\[\]{}()"`]/g, '') 
+                .replace(/[-–—]/g, ' ')
+                .replace(/[\n\r]+/g, '. ');
+
+            const utterance = new SpeechSynthesisUtterance(textoLimpio);
             const lang = document.getElementById("languageSelect").value;
             utterance.lang = lang === 'es' ? 'es-ES' : (lang === 'pt' ? 'pt-PT' : 'en-US');
-            utterance.rate = 0.9;
+            utterance.rate = 0.85; // Ritmo pausado humano natural ideal para adultos mayores
+            utterance.pitch = 1.0;
             window.speechSynthesis.speak(utterance);
+        }
+
+        // Alias para el botón
+        function reproducirVozHumana() {
+            reproducirVozHumanana();
         }
 
         async function iniciarPagoStripe() {
