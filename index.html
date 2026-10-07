@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AL CIELO - Bienestar y Movilidad (50+)</title>
+<title>AL CIELO - Bienestar y Movilidad Universal (50+)</title>
 <style>
 *{box-sizing:border-box}
 body{font-family:system-ui,-apple-system,sans-serif;background:#0f172a;color:#f8fafc;margin:0;padding:20px;display:flex;flex-direction:column;align-items:center;min-height:100vh}
@@ -54,18 +54,18 @@ select{font-size:1.1rem;padding:14px;width:100%;border-radius:8px;border:1px sol
 
 <div class="info-card">
 <h3 id="t-what-is-title">¿Qué es y para qué sirve AL CIELO?</h3>
-<p id="t-what-is-desc">Es un sistema de bienestar integral diseñado para personas de 50 años en adelante. Ofrece rutinas guiadas de bienestar y movilidad adaptadas a diferentes realidades.</p>
+<p id="t-what-is-desc">Es un sistema de bienestar universal diseñado para acompañar la vitalidad a cualquier edad. Ofrece sesiones dinámicas adaptadas sin importar si la persona está activa, sentada o en cama.</p>
 
-<h3 id="t-contains-title" style="margin-top:15px">¿Qué contiene el servicio?</h3>
+<h3 id="t-contains-title" style="margin-top:15px">¿Qué contiene el servicio de 10 minutos?</h3>
 <ul>
-<li><strong id="t-c1-strong">Movilidad Universal Adaptada:</strong> <span id="t-c1-desc">Ejercicios suaves aptos tanto para personas activas como para quienes están en silla de ruedas o encamados.</span></li>
-<li><strong id="t-c2-strong">Doble Accesibilidad (Audio y Texto Visual):</strong> <span id="t-c2-desc">Puedes escuchar las instrucciones y también leerlas en pantalla.</span></li>
-<li><strong id="t-c3-strong">Sesiones de 10 Minutos:</strong> <span id="t-c3-desc">Respiración y movimientos suaves sin tecnicismos médicos.</span></li>
+<li><strong id="t-c1-strong">Fase 1 (Min 0-3): Activación Circulatoria Universal:</strong> <span id="t-c1-desc">Micro-movimientos conscientes para estimular el retorno venoso de forma segura.</span></li>
+<li><strong id="t-c2-strong">Fase 2 (Min 3-7): Estabilidad Postural y Confort:</strong> <span id="t-c2-desc">Estiramientos y estiramientos suaves adaptados al lugar donde se encuentre.</span></li>
+<li><strong id="t-c3-strong">Fase 3 (Min 7-10): Calibración Respiratoria:</strong> <span id="t-c3-desc">Patrones guiados de respiración para calmar el sistema nervioso y oxigenar.</span></li>
 </ul>
 </div>
 
 <div class="control-group">
-<label id="t-lang-label" for="languageSelect">Seleccione su Idioma / Select Language:</label>
+<label id="t-lang-label" for="languageSelect">Seleccione su Idioma / Select Language / Selecione o Idioma:</label>
 <select id="languageSelect" onchange="cambiarIdiomaPantalla()">
 <option value="es">Español</option>
 <option value="en">English</option>
@@ -73,13 +73,13 @@ select{font-size:1.1rem;padding:14px;width:100%;border-radius:8px;border:1px sol
 </select>
 
 <button id="btn-prev" class="btn btn-preview" onclick="obtenerContenido(true)">▶️ Ver y Escuchar Muestra Gratuita (30 Segundos)</button>
-<button id="btn-sess" class="btn btn-session" onclick="obtenerContenido(false)">🔊 Iniciar Sesión Completa de Bienestar</button>
+<button id="btn-sess" class="btn btn-session" onclick="obtenerContenido(false)">🔊 Iniciar Sesión Completa de Bienestar (10 Minutos)</button>
 <button id="audioControlBtn" class="btn btn-audio" onclick="reproducirVozHumana()">🗣️ Volver a escuchar en voz alta</button>
 </div>
 
 <div class="control-group" style="background:#111827;padding:15px;border-radius:8px;text-align:center;border:1px dashed #374151">
-<label id="t-sub-title" style="color:#4ade80;font-size:1.1rem;margin-bottom:5px">Suscripción ($15.99 / mes)</label>
-<p id="t-sub-desc" style="font-size:.95rem;color:#9ca3af;margin:5px 0 15px">Acceso a las sesiones completas mientras la suscripción permanezca activa.</p>
+<label id="t-sub-title" style="color:#4ade80;font-size:1.1rem;margin-bottom:5px">Suscripción Protegida por Dispositivo ($15.99 / mes)</label>
+<p id="t-sub-desc" style="font-size:.95rem;color:#9ca3af;margin:5px 0 15px">Acceso ilimitado a sesiones únicas y variables todos los días.</p>
 <button id="btn-pay-text" class="btn btn-pay" onclick="iniciarPagoStripe()">💳 Activar Suscripción Segura</button>
 <div id="payment-status"></div>
 </div>
@@ -99,60 +99,60 @@ const traducciones={
 es:{
 subtitle:"Bienestar, Movilidad y Conexión Diaria (50+)",
 whatIsTitle:"¿Qué es y para qué sirve AL CIELO?",
-whatIsDesc:"Es un sistema de bienestar integral diseñado para personas de 50 años en adelante. Ofrece rutinas guiadas de bienestar y movilidad adaptadas a diferentes realidades.",
-containsTitle:"¿Qué contiene el servicio?",
-c1Strong:"Movilidad Universal Adaptada:",
-c1Desc:"Ejercicios suaves aptos tanto para personas activas como para quienes están en silla de ruedas o encamados.",
-c2Strong:"Doble Accesibilidad (Audio y Texto Visual):",
-c2Desc:"Puedes escuchar las instrucciones y también leerlas en pantalla.",
-c3Strong:"Sesiones de 10 Minutos:",
-c3Desc:"Respiración y movimientos suaves sin tecnicismos médicos.",
-langLabel:"Seleccione su Idioma / Select Language:",
+whatIsDesc:"Es un sistema de bienestar universal diseñado para acompañar la vitalidad a cualquier edad. Ofrece sesiones dinámicas adaptadas sin importar si la persona está activa, sentada o en cama.",
+containsTitle:"¿Qué contiene el servicio de 10 minutos?",
+c1Strong:"Fase 1 (Min 0-3): Activación Circulatoria Universal:",
+c1Desc:"Micro-movimientos conscientes para estimular el retorno venoso de forma segura.",
+c2Strong:"Fase 2 (Min 3-7): Estabilidad Postural y Confort:",
+c2Desc:"Estiramientos suaves adaptados al lugar donde se encuentre.",
+c3Strong:"Fase 3 (Min 7-10): Calibración Respiratoria:",
+c3Desc:"Patrones guiados de respiración para calmar el sistema nervioso y oxigenar.",
+langLabel:"Seleccione su Idioma:",
 btnPrev:"▶️ Ver y Escuchar Muestra Gratuita (30 Segundos)",
-btnSess:"🔊 Iniciar Sesión Completa de Bienestar",
+btnSess:"🔊 Iniciar Sesión Completa de Bienestar (10 Minutos)",
 audioBtn:"🗣️ Volver a escuchar en voz alta",
-subTitle:"Suscripción ($15.99 / mes)",
-subDesc:"Acceso a las sesiones completas mientras la suscripción permanezca activa.",
+subTitle:"Suscripción Protegida por Dispositivo ($15.99 / mes)",
+subDesc:"Acceso ilimitado a sesiones únicas y variables todos los días.",
 btnPay:"💳 Activar Suscripción Segura",
 legal:"<strong>Aviso Legal y de Responsabilidad:</strong> AL CIELO es un servicio de bienestar general y estilo de vida, no un servicio médico ni de diagnóstico. Cada usuario participa bajo su propia discreción y comodidad personal."
 },
 en:{
 subtitle:"Wellness, Mobility and Daily Connection (50+)",
 whatIsTitle:"What is AL CIELO and what is it for?",
-whatIsDesc:"It is a wellness system designed for people aged 50 and over. It offers guided wellness and mobility routines adapted to different situations.",
-containsTitle:"What does the service include?",
-c1Strong:"Adapted Universal Mobility:",
-c1Desc:"Gentle exercises suitable for active individuals as well as people using wheelchairs or who are bedridden.",
-c2Strong:"Dual Accessibility (Audio and Visual Text):",
-c2Desc:"You can listen to the instructions and also read them on screen.",
-c3Strong:"10-Minute Sessions:",
-c3Desc:"Breathing and gentle movements without medical jargon.",
+whatIsDesc:"It is a universal wellness system designed to support vitality at any age. It offers adapted dynamic sessions whether active, seated, or bedridden.",
+containsTitle:"What does the 10-minute service include?",
+c1Strong:"Phase 1 (Min 0-3): Universal Circulatory Activation:",
+c1Desc:"Conscious micro-movements to stimulate safe venous return.",
+c2Strong:"Phase 2 (Min 3-7): Postural Stability and Comfort:",
+c2Desc:"Gentle stretches adapted to wherever you are.",
+c3Strong:"Phase 3 (Min 7-10): Respiratory Calibration:",
+c3Desc:"Guided breathing patterns to calm the nervous system and oxygenate.",
 langLabel:"Select Language:",
 btnPrev:"▶️ View & Listen Free Preview (30 Seconds)",
-btnSess:"🔊 Start Full Wellness Session",
+btnSess:"🔊 Start Full Wellness Session (10 Minutes)",
 audioBtn:"🗣️ Listen aloud again",
-subTitle:"Subscription ($15.99 / month)",
-subDesc:"Access to full sessions while the subscription remains active.",
+subTitle:"Device-Protected Subscription ($15.99 / month)",
+subDesc:"Unlimited access to unique, changing sessions every day.",
 btnPay:"💳 Activate Secure Subscription",
 legal:"<strong>Legal Notice and Disclaimer:</strong> AL CIELO is a general wellness and lifestyle service, not a medical or diagnostic service. Each user participates at their own discretion and comfort."
 },
 pt:{
 subtitle:"Bem-estar, Mobilidade e Conexão Diária (50+)",
 whatIsTitle:"O que é e para que serve o AL CIELO?",
-whatIsDesc:"É um sistema de bem-estar projetado para pessoas com 50 anos ou mais. Oferece rotinas guiadas de bem-estar e mobilidade adaptadas a diferentes situações.",
-containsTitle:"O que o serviço contém?",
-c1Strong:"Mobilidade Universal Adaptada:",
-c1Desc:"Exercícios suaves adequados para pessoas ativas, em cadeira de rodas ou acamadas.",
-c2Strong:"Dupla Acessibilidade (Áudio e Texto Visual):",
-c2Desc:"Você pode ouvir as instruções e também lê-las na tela.",
-c3Strong:"Sessões de 10 Minutos:",
-c3Desc:"Respiração e movimentos suaves sem jargões médicos.",
+whatIsDesc:"É um sistema de bem-estar universal desenhado para apoiar a vitalidade em qualquer idade. Oferece sessões dinâmicas adaptadas, seja ativo, sentado ou acamado.",
+containsTitle:"O que o serviço de 10 minutos contém?",
+c1Strong:"Fase 1 (Min 0-3): Ativação Circulatória Universal:",
+c1Desc:"Micro-movimentos conscientes para estimular o retorno venoso com segurança.",
+c2Strong:"Fase 2 (Min 3-7): Estabilidade Postural e Conforto:",
+c2Desc:"Alongamentos suaves adaptados ao local onde estiver.",
+c3Strong:"Fase 3 (Min 7-10): Calibração Respiratória:",
+c3Desc:"Padrões guiados de respiração para acalmar o sistema nervoso e oxigenar.",
 langLabel:"Selecione o Idioma:",
 btnPrev:"▶️ Ver e Ouvir Amostra Gratuita (30 Segundos)",
-btnSess:"🔊 Iniciar Sessão Completa de Bem-estar",
+btnSess:"🔊 Iniciar Sessão Completa de Bem-estar (10 Minutos)",
 audioBtn:"🗣️ Ouvir em voz alta novamente",
-subTitle:"Assinatura ($15.99 / mês)",
-subDesc:"Acesso às sessões completas enquanto a assinatura estiver ativa.",
+subTitle:"Assinatura Protegida por Dispositivo ($15.99 / mês)",
+subDesc:"Acesso ilimitado a sessões exclusivas e variadas todos os dias.",
 btnPay:"💳 Ativar Assinatura Segura",
 legal:"<strong>Aviso Legal e de Responsabilidade:</strong> O AL CIELO é um serviço de bem-estar geral e estilo de vida, não um serviço médico ou de diagnóstico. Cada usuário participa por sua própria discrição e conforto."
 }
@@ -241,7 +241,7 @@ audioBtn.style.display="none";
 if(isHook){
 box.innerText=lang==="es"?"Preparando su muestra gratuita...":lang==="pt"?"Preparando sua amostra gratuita...":"Preparing your free preview...";
 }else{
-box.innerText=lang==="es"?"Verificando su acceso...":lang==="pt"?"Verificando seu acesso...":"Checking your access...";
+box.innerText=lang==="es"?"Preparando su sesión dinámica de 10 minutos...":lang==="pt"?"Preparando sua sessão dinâmica de 10 minutos...":"Preparing your dynamic 10-minute session...";
 sessionBtn.disabled=true;
 }
 
@@ -265,10 +265,10 @@ audioBtn.style.display="block";
 reproducirVozHumana();
 }else if(response.status===403){
 box.innerText=lang==="es"
-?"Este dispositivo no tiene una suscripción activa. Active la suscripción de $15.99 para iniciar la sesión completa."
+?"Este dispositivo no tiene una suscripción activa. Active la suscripción de $15.99 para iniciar las sesiones completas."
 :lang==="pt"
-?"Este dispositivo não possui uma assinatura ativa. Ative a assinatura de $15.99 para iniciar a sessão completa."
-:"This device does not have an active subscription. Activate the $15.99 subscription to start the full session.";
+?"Este dispositivo não possui uma assinatura ativa. Ative a assinatura de $15.99 para iniciar as sessões completas."
+:"This device does not have an active subscription. Activate the $15.99 subscription to start the full sessions.";
 }else{
 box.innerText=(data.detail||"Error del servidor.");
 }
