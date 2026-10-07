@@ -1,12 +1,12 @@
 import os
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 import stripe
 from google import genai
 from google.genai import types
+from database import authorize_device, check_device_authorization
 
-# Inicialización definitiva de la aplicación para AL CIELO
-app = FastAPI(title="AL CIELO - Wellness Engine", version="1.0.0")
+app = FastAPI(title="AL CIELO - Production Engine", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -16,12 +16,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configuración de Llaves Maestras desde Variables de Entorno en Render
+# Carga estricta de variables de entorno configuradas en Render
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-# Prompt Maestro Inmutable: Enfoque exclusivo para adultos mayores de 50 años en adelante, 
-# universal, seguro, con enfoque de wellness y protección legal.
+# Prompt maestro inmutable: Enfoque absoluto en wellness universal, 50+, sin jerga médica y con aviso de seguridad
 SYSTEM_WELLNESS_PROMPT = """
 Eres el motor de bienestar universal de la aplicación "AL CIELO", diseñada exclusivamente para adultos mayores de 50 años en adelante. 
 Tu alcance es universal: debes estructurar sesiones aptas para cualquier condición física (personas totalmente activas, con movilidad reducida, en silla de ruedas o completamente postradas/en cama).
@@ -30,40 +31,95 @@ REGLAS ABSOLUTAS E INMUTABLES:
 1. ENFOQUE EXCLUSIVO DE WELLNESS: Cero términos médicos, diagnósticos, tratamientos o curas. Eres un especialista en bienestar, movilidad, circulación y estilo de vida.
 2. AVISO OBLIGATORIO DE SEGURIDAD: Toda sesión debe iniciar obligatoriamente con un recordatorio verbal de seguridad de 5 segundos indicando que se debe realizar únicamente lo que resulte cómodo y detenerse inmediatamente ante cualquier molestia.
 3. ADAPTABILIDAD UNIVERSAL: Las pautas deben servir tanto para quien mueve sus extremidades con normalidad como para quien solo puede realizar micro-movimientos articulares o respiración consciente.
-4. VARIABILIDAD INFINITA: Jamás repitas la misma secuencia. Cambia sutilmente el orden, los enfoques, las metáforas de bienestar y las pautas de respiración para que cada sesión diaria sea única y diferente.
+4. VARIABILIDAD INFINITA: Jamás repites la misma secuencia. Cambias sutilmente el orden, los enfoques, las metáforas de bienestar y las pautas de respiración para que cada sesión diaria sea única y diferente.
 """
+
+@app.post("/api/v1/create-checkout-session")
+async def create_checkout_session(request: Request):
+    """Crea la pasarela de pago en Stripe por $15.99 vinculada al hardware del dispositivo."""
+    try:
+        body = await request.json()
+        device_id = body.get("device_id")
+        
+        if not device_id:
+            raise HTTPException(status_code=400, detail="Device ID required.")
+
+        checkout_session = stripe.checkout.Session.create(
+            payment_method_types=['card'],
+            line_items=[{
+                'price': STRIPE_PRICE_ID,
+                'quantity': 1,
+            }],
+            mode='subscription',
+            success_url=f"https://alcielo.app/success?device_id={device_id}",
+            cancel_url="https://alcielo.app/cancel",
+            metadata={'device_id': device_id}
+        )
+        return {"checkout_url": checkout_session.url}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/v1/stripe-webhook")
+async def stripe_webhook(request: Request, stripe_signature: str = Header(None)):
+    """Webhook oficial de Stripe para activar automáticamente el dispositivo al completarse el pago."""
+    payload = await request.body()
+    
+    try:
+        event = stripe.Webhook.construct_event(
+            payload, stripe_signature, STRIPE_WEBHOOK_SECRET
+        )
+    except (ValueError, stripe.error.SignatureVerificationError):
+        raise HTTPException(status_code=400, detail="Invalid webhook signature or payload.")
+
+    if event['type'] == 'checkout.session.completed':
+        session = event['data']['object']
+        device_id = session.get("metadata", {}).get("device_id")
+        if device_id:
+            authorize_device(device_id)
+
+    return {"status": "success"}
+
+@app.post("/api/v1/verify-device")
+async def verify_device(request: Request):
+    """Verifica si el dispositivo actual posee una licencia activa."""
+    body = await request.json()
+    device_id = body.get("device_id")
+    authorized = check_device_authorization(device_id)
+    return {"device_id": device_id, "authorized": authorized}
 
 @app.post("/api/v1/generate-session")
 async def generate_session(request: Request):
     """
-    Genera la sesión diaria de 10 minutos (o la muestra de gancho de 30 segundos) 
-    para adultos mayores de 50 años en adelante, garantizando variabilidad infinita y multilenguaje.
+    Genera la sesión diaria de 10 minutos (o gancho gratuito de 30 segundos) 
+    validando obligatoriamente la suscripción del dispositivo.
     """
     try:
         body = await request.json()
         device_id = body.get("device_id")
-        language = body.get("language", "en") # 'es' (Español), 'en' (English), 'pt' (Português)
-        is_hook = body.get("is_hook", False) # True para la muestra gratuita de 30 segundos
+        language = body.get("language", "en") # 'es', 'en', 'pt'
+        is_hook = body.get("is_hook", False) # True para la muestra de 30 segundos gratis
 
         if not device_id:
-            raise HTTPException(status_code=400, detail="Device ID required for security control.")
+            raise HTTPException(status_code=400, detail="Device ID required.")
 
-        # Definición del tipo de contenido según el gancho o la sesión completa
+        # Si no es la sesión de gancho de 30 segundos, exige verificación estricta de pago en el dispositivo
+        if not is_hook and not check_device_authorization(device_id):
+            raise HTTPException(status_code=403, detail="Device not authorized. Subscription required.")
+
         duration_text = "30 seconds free visual preview hook" if is_hook else "10 minutes complete unique daily session"
         
         prompt = f"""
-        Genera una sesión dirigida a adultos mayores de 50 años en adelante, en idioma [{language}], con una duración de [{duration_text}].
-        Incluye obligatoriamente el aviso legal inicial de seguridad de 5 segundos, seguido de pautas de activación circulatoria universal, confort postural y calibración respiratoria.
-        Recuerda: tono cálido, directo, sin rodeos, adaptado para cualquier estado físico (desde activos hasta postrados), con variabilidad infinita.
+        Genera una sesión dirigida a adultos mayores de 50 años en adelante, en idioma [{language}], duración [{duration_text}].
+        Incluye obligatoriamente el aviso legal inicial de seguridad de 5 segundos, activación circulatoria universal, confort postural y calibración respiratoria.
+        Tono cálido, directo, sin rodeos, adaptado para cualquier estado físico (desde activos hasta postrados), variabilidad infinita.
         """
 
-        # Llamada al motor de Gemini IA
         response = gemini_client.models.generate_content(
             model='gemini-2.5-flash',
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_WELLNESS_PROMPT,
-                temperature=0.7, # Temperatura optimizada para generar variabilidad única diaria
+                temperature=0.7,
             ),
         )
 
@@ -76,25 +132,7 @@ async def generate_session(request: Request):
             "session_content": response.text
         }
 
+    except HTTPException as he:
+        raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/v1/verify-device-subscription")
-async def verify_device(request: Request):
-    """
-    Verifica que el dispositivo actual posea la suscripción única de $15.99 procesada en Stripe.
-    Mantiene el control estricto de hardware: un pago, un dispositivo.
-    """
-    body = await request.json()
-    device_id = body.get("device_id")
-    
-    if not device_id:
-        raise HTTPException(status_code=400, detail="Device ID missing.")
-
-    # Validación de licencia vinculada rígidamente al dispositivo
-    return {
-        "app_name": "AL CIELO",
-        "device_id": device_id,
-        "authorized": True, 
-        "message": "Device successfully authenticated for AL CIELO."
-    }
