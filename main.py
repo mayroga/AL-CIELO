@@ -1,14 +1,16 @@
 import os
 import sqlite3
 import random
+import asyncio
 from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import stripe
 from google import genai
 from google.genai import types
+import openai
 
-app = FastAPI(title="AL CIELO - Production Engine", version="3.6.0")
+app = FastAPI(title="AL CIELO - Production Engine", version="3.7.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -23,6 +25,18 @@ STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 ADMIN_USER = os.getenv("ADMIN_USER") or os.getenv("ADMIN_USERNAME")
 ADMIN_PASS = os.getenv("ADMIN_PASS") or os.getenv("ADMIN_PASSWORD")
 DB_FILE = "alcielo_licences.db"
+
+# Inicializar clientes de IA (Gemini y OpenAI)
+try:
+    gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+except Exception:
+    gemini_client = None
+
+openai_api_key = os.getenv("OPENAI_API_KEY")
+if openai_api_key:
+    openai_client = openai.OpenAI(api_key=openai_api_key)
+else:
+    openai_client = None
 
 
 def get_db():
@@ -90,13 +104,8 @@ def deactivate_device_by_subscription(subscription_id):
 
 init_db()
 
-try:
-    gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-except Exception:
-    gemini_client = None
-
 SYSTEM_WELLNESS_PROMPT = """
-You are the exclusive, professional human-like wellness coach for the platform "AL CIELO", designed for adults aged 50 and over, encompassing everyone from active individuals to those seated, resting, or poststrated in bed, including those with limited mobility or missing limbs.
+You are the exclusive, professional human-like wellness coach for the platform "AL CIELO", designed for adults aged 50 and over, encompassing active individuals, seated, resting, or poststrated in bed, including those with limited mobility or missing limbs.
 Your tone must be warm, direct, calm, compassionate, and conversational. You act as an expert companion right beside the user.
 
 STRICT OPERATIONAL RULES:
@@ -270,7 +279,6 @@ async def generate_session(request: Request):
         lang_names = {"es": "Spanish", "en": "English", "pt": "Portuguese"}
         selected_lang_name = lang_names.get(language, "Spanish")
         
-        # Añadimos un número aleatorio para forzar a la IA a cambiar el enfoque y las palabras cada vez
         random_seed = random.randint(1000, 99999)
         
         if is_hook:
@@ -292,25 +300,49 @@ Vary the exercise sequence, phrasing, and focus compared to standard routines so
 Write a rich, continuous, deeply detailed coaching routine that flows naturally from gentle joint micro-movements, postural comfort adjustments, and sensory awareness into deep breathing exercises, providing enough descriptive pacing, pauses, and actionable coaching cues to comfortably fill 10 full minutes of calm spoken practice.
 Output ONLY plain conversational text in {selected_lang_name}. No meta-commentary or titles.
 """
-            max_tokens = 3000  # Tokenaje ampliado para garantizar contenido masivo de 10 minutos
+            max_tokens = 3000
 
         response_text = ""
+
+        # INTENTO 1: GEMINI (con límite de 20 segundos)
         if gemini_client:
             try:
-                response = gemini_client.models.generate_content(
+                # asyncio.wait_for establece exactamente la regla de esperar 20 segundos máximo
+                response_task = asyncio.to_thread(
+                    gemini_client.models.generate_content,
                     model="gemini-2.5-flash",
                     contents=prompt,
                     config=types.GenerateContentConfig(
                         system_instruction=SYSTEM_WELLNESS_PROMPT,
-                        temperature=0.95,  # Temperatura alta para garantizar variedad absoluta en cada llamada
+                        temperature=0.95,
                         max_output_tokens=max_tokens,
-                    ),
+                    )
                 )
-                response_text = response.text or ""
+                gemini_response = await asyncio.wait_for(response_task, timeout=20.0)
+                response_text = gemini_response.text or ""
+            except Exception:
+                # Si Gemini tarda más de 20 segundos o falla, la ejecución salta automáticamente al respaldo OpenAI
+                response_text = ""
+
+        # INTENTO 2: OPENAI COMO RESPALDO AUTOMÁTICO (Si Gemini falló o superó los 20 segundos)
+        if not response_text and openai_client:
+            try:
+                openai_task = asyncio.to_thread(
+                    openai_client.chat.completions.create,
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": SYSTEM_WELLNESS_PROMPT},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.95,
+                    max_tokens=max_tokens
+                )
+                openai_response = await asyncio.wait_for(openai_task, timeout=20.0)
+                response_text = openai_response.choices[0].message.content or ""
             except Exception:
                 response_text = ""
 
-        # Respaldo enriquecido y dinámico en caso de error de red (para que nunca sea corto ni idéntico)
+        # ÚLTIMO RESPALDO DE EMERGENCIA (Si ambos motores tuvieran problemas de red externos)
         if not response_text or len(response_text) < 200:
             if is_hook:
                 response_text = "Muestra Gratuita (30s): Bienvenido a AL CIELO. Adopte una postura cómoda, inhale hondo por la nariz y relaje suavemente sus hombros."
