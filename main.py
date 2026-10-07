@@ -57,8 +57,8 @@ async def create_checkout_session(request: Request):
                 'quantity': 1,
             }],
             mode='subscription',
-            success_url=f"https://https://al-cielo.onrender.com/success?device_id={device_id}",
-            cancel_url="https://https://al-cielo.onrender.com/cancel",
+            success_url=f"https://al-cielo.onrender.com/success?device_id={device_id}",
+            cancel_url="https://al-cielo.onrender.com/cancel",
             metadata={'device_id': device_id}
         )
         return {"checkout_url": checkout_session.url}
