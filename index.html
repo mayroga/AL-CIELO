@@ -240,92 +240,10 @@ alert("Connection error: "+err.message);
 }
 
 function iniciarPantallaDespejada(){
-// Ocultar tarjetas informativas y secciones secundarias para despejar la pantalla
 document.getElementById("infoCardSection").style.display="none";
 document.getElementById("subscriptionSection").style.display="none";
 const outContainer=document.getElementById("output-container");
 outContainer.style.display="flex";
-}
-
-function iniciarCirculoRespiratorio(lang){
-const breathView=document.getElementById("breathingVisualView");
-breathView.style.display="flex";
-const circle=document.getElementById("breathCircleElement");
-const phaseText=document.getElementById("breathPhaseText");
-const descText=document.getElementById("breathDescText");
-const benefitText=document.getElementById("breathBenefitText");
-
-const txts = {
-es: { inhala: "Inhala", exhala: "Exhala", descInh: "Inhala profundamente por la nariz ensanchando el abdomen...", descExh: "Exhala suavemente por la boca liberando tensiones...", ben: "Beneficio: Oxigena profundamente el cuerpo y aquieta el sistema nervioso de forma segura." },
-en: { inhala: "Inhale", exhala: "Exhale", descInh: "Inhale deeply through your nose expanding your abdomen...", descExh: "Exhale gently through your mouth releasing tension...", ben: "Benefit: Deeply oxygenates the body and gently calms the nervous system." },
-pt: { inhala: "Inspire", exhala: "Expire", descInh: "Inspire profundamente pelo nariz expandindo o abdômen...", descExh: "Expire suavemente pela boca liberando tensões...", ben: "Benefício: Oxigena profundamente o corpo e acalma o sistema nervoso." }
-};
-const t = txts[lang] || txts.es;
-
-let inhaling=true;
-if(breathingInterval) clearInterval(breathingInterval);
-
-breathingInterval=setInterval(()=>{
-if(inhaling){
-circle.style.transform="scale(1.25)";
-phaseText.innerText=t.inhala;
-descText.innerText=t.descInh;
-benefitText.innerText=t.ben;
-}else{
-circle.style.transform="scale(1.0)";
-phaseText.innerText=t.exhala;
-descText.innerText=t.descExh;
-benefitText.innerText=t.ben;
-}
-inhaling=!inhaling;
-},4000);
-}
-
-async function obtenerContenido(isHook){
-const lang=document.getElementById("languageSelect").value;
-const box=document.getElementById("output-box");
-const audioBtn=document.getElementById("audioControlBtn");
-const sessionBtn=document.getElementById("btn-sess");
-
-iniciarPantallaDespejada();
-audioBtn.style.display="none";
-
-if(isHook){
-box.innerText=lang==="es"?"Preparando su muestra gratuita...":lang==="pt"?"Preparando sua amostra gratuita...":"Preparing your free preview...";
-}else{
-box.innerText=lang==="es"?"Iniciando sesión completa de bienestar y movilidad (10 minutos)...":lang==="pt"?"Iniciando sessão completa de bem-estar e mobilidade (10 minutos)...":"Starting full wellness and mobility session (10 minutes)...";
-sessionBtn.disabled=true;
-}
-
-try{
-const response=await fetch("/api/v1/generate-session",{
-method:"POST",
-headers:{"Content-Type":"application/json"},
-body:JSON.stringify({device_id:getDeviceId(),language:lang,is_hook:isHook})
-});
-
-const data=await response.json().catch(()=>({}));
-
-if(response.ok){
-ultimoTextoGenerado=data.session_content||"";
-box.innerText=ultimoTextoGenerado;
-audioBtn.style.display="block";
-reproducirVozHumana();
-iniciarCirculoRespiratorio(lang);
-}else if(response.status===403){
-box.innerText=lang==="es"
-?"Este dispositivo no tiene una suscripción activa. Active la suscripción de $15.99 para iniciar la sesión completa."
-:lang==="pt"
-?"Este dispositivo não possui uma assinatura ativa. Ative a assinatura de $15.99 para iniciar a sessão completa."
-:"This device does not have an active subscription. Activate the $15.99 subscription to start the full session.";
-}else{
-box.innerText=(data.detail||"Error del servidor.");
-}
-}catch(err){
-box.innerText="Error de conexión: "+err.message;
-}finally{
-sessionBtn.disabled=false;
-}
 }
 
 function reproducirVozHumana(){
@@ -343,9 +261,39 @@ const lang=document.getElementById("languageSelect").value;
 utterance.lang=lang==="es"?"es-ES":lang==="pt"?"pt-PT":"en-US";
 utterance.rate=.85;
 utterance.pitch=1;
+
+// Sincronización del círculo respiratorio al compás de la voz y las palabras clave de respiración
+utterance.onboundary=(event)=>{
+const spokenWord=textoLimpio.substring(event.charIndex, event.charIndex + 20).toLowerCase();
+const breathView=document.getElementById("breathingVisualView");
+const circle=document.getElementById("breathCircleElement");
+const phaseText=document.getElementById("breathPhaseText");
+const descText=document.getElementById("breathDescText");
+const benefitText=document.getElementById("breathBenefitText");
+
+const esRespiracion = spokenWord.includes("inhala") || spokenWord.includes("exhala") || spokenWord.includes("respir") || spokenWord.includes("inhale") || spokenWord.includes("exhale") || spokenWord.includes("inspire") || spokenWord.includes("expire");
+
+if(esRespiracion){
+breathView.style.display="flex";
+if(spokenWord.includes("exhala") || spokenWord.includes("exhale") || spokenWord.includes("expire")){
+circle.style.transform="scale(1.0)";
+phaseText.innerText = lang==="es"?"Exhala":lang==="pt"?"Expire":"Exhale";
+descText.innerText = lang==="es"?"Exhala suavemente por la boca liberando tensiones...":lang==="pt"?"Expire suavemente pela boca...":"Exhale gently...";
+}else{
+circle.style.transform="scale(1.25)";
+phaseText.innerText = lang==="es"?"Inhala":lang==="pt"?"Inspire":"Inhale";
+descText.innerText = lang==="es"?"Inhala profundamente por la nariz ensanchando el abdomen...":lang==="pt"?"Inspire profundamente...":"Inhale deeply...";
+}
+benefitText.innerText = lang==="es"?"Beneficio: Oxigena profundamente el cuerpo y aquieta el sistema nervioso.":lang==="pt"?"Benefício: Oxigena o corpo e acalma o sistema nervoso.":"Benefit: Deeply oxygenates the body.";
+} else {
+// Si el asistente pasa a ejercicios de movilidad de extremidades u otras partes, se oculta el círculo de respiración
+breathView.style.display="none";
+}
+};
+
 window.speechSynthesis.speak(utterance);
 }
-
+  
 function mostrarEstadoPago(tipo,mensaje){
 const box=document.getElementById("payment-status");
 box.style.display="block";
