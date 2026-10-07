@@ -7,7 +7,7 @@ import stripe
 from google import genai
 from google.genai import types
 
-app = FastAPI(title="AL CIELO - Production Engine", version="3.1.0")
+app = FastAPI(title="AL CIELO - Production Engine", version="3.2.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -96,16 +96,16 @@ except Exception:
 
 SYSTEM_WELLNESS_PROMPT = """
 You are the exclusive wellness advisor for the platform "AL CIELO", designed for adults aged 50 and over (active, seated, or bedridden).
-Your instructions must be direct, extremely concise, warm, and highly effective. The user listens via voice.
+Your instructions must be direct, warm, compassionate, and extensive enough to provide a complete, rich, continuous guided experience. 
 
 ABSOLUTE RULES:
-1. LEGAL SAFETY BLOCK: Every session strictly starts by stating that this is a general wellness service, not medical advice, and that each person participates at their own discretion and comfort.
-2. STRUCTURE FOR FULL 10-MINUTE SESSIONS:
-   - Phase 1 (Min 0-3): Universal Circulatory Activation (gentle micro-movements of fingers, toes, and joints to stimulate venous return safely whether sitting, standing, or lying in bed).
-   - Phase 2 (Min 3-7): Postural Stability and Comfort (subtle shoulder rolls, gentle neck turns, and self-assisted stretching suited for chair, couch, or bed).
-   - Phase 3 (Min 7-10): Respiratory Calibration (deep diaphragmatic breathing, slow exhalations to calm the nervous system and bring cellular oxygenation).
-3. VARIABILITY: Generate unique variations and fresh phrasing every time, never repeating the exact same text sequence, keeping the session engaging and dynamic.
-4. Zero medical jargon. Speak as a lifestyle and wellness specialist. Do not mention AI or automated systems.
+1. LEGAL SAFETY: Begin with a brief, warm welcome establishing this as a general wellness session for personal comfort.
+2. FULL SESSION STRUCTURE (For Full Sessions): You must write a complete, rich, sequential guide containing:
+   - Part 1: Universal Circulatory Activation (gentle micro-movements of fingers, toes, and joints to stimulate venous return safely whether sitting or lying in bed).
+   - Part 2: Postural Stability and Comfort (subtle shoulder rolls, gentle neck turns, and self-assisted stretching suited for chair, couch, or bed).
+   - Part 3: Respiratory Calibration (deep diaphragmatic breathing, slow exhalations to calm the nervous system and bring cellular oxygenation).
+3. VARIABILITY: Generate unique variations and fresh phrasing every time to keep the session engaging and dynamic.
+4. Zero medical jargon. Speak as a lifestyle and wellness specialist. Do not mention AI, automated systems, or explicit time limits like "10 minutes" in the text.
 """
 
 
@@ -264,21 +264,21 @@ async def generate_session(request: Request):
             )
 
         duration_desc = (
-            "30-second free preview focusing on universal circulatory movement and gentle breathing"
+            "A short 30-second preview focusing on gentle circulatory micro-movement and breathing."
             if is_hook
-            else "full 10-minute guided wellness session structured across 3 distinct phases: (1) Circulatory activation, (2) Postural stability and comfort, and (3) Respiratory calibration"
+            else "A complete, rich, multi-phase guided wellness session including circulatory activation, postural comfort, and respiratory calibration with detailed, compassionate instructions."
         )
         lang_names = {"es": "Spanish", "en": "English", "pt": "Portuguese"}
         selected_lang_name = lang_names.get(language, "Spanish")
         
         prompt = f"""
-Generate a [{duration_desc}] strictly in [{selected_lang_name}]
+Generate [{duration_desc}] strictly in [{selected_lang_name}]
 for adults aged 50 and over. Universal design suitable whether sitting, standing, or in bed.
-Direct, warm, human instructions focusing on gentle mobility and breathing.
+Provide thorough, well-paced, compassionate instructions broken down into clear steps or paragraphs so the user has a full, rich experience.
 CRITICAL:
-Output ONLY plain conversational sentences in {selected_lang_name}.
+Output ONLY plain conversational text in {selected_lang_name}.
 Do NOT mix languages.
-Do NOT include any intro text or titles.
+Do NOT include any intro text, titles, or meta-commentary.
 """
         response_text = ""
         if gemini_client:
@@ -288,7 +288,8 @@ Do NOT include any intro text or titles.
                     contents=prompt,
                     config=types.GenerateContentConfig(
                         system_instruction=SYSTEM_WELLNESS_PROMPT,
-                        temperature=0.75,  # Higher temperature for infinite variability
+                        temperature=0.75,
+                        max_output_tokens=1000,  # Ensures a full, comprehensive response
                     ),
                 )
                 response_text = response.text or ""
@@ -297,11 +298,11 @@ Do NOT include any intro text or titles.
 
         if not response_text:
             if language == "en":
-                response_text = "Welcome to AL CIELO. This session is for general well-being. Please take a comfortable posture wherever you are today. Inhale deeply through your nose, and exhale slowly through your mouth. Gently move your toes and fingers, feeling a soft, natural circulation."
+                response_text = "Welcome to AL CIELO. Wherever you are resting today, take a comfortable posture. Begin by gently opening and closing your fingers and toes, feeling the natural warmth and circulation returning to your extremities. Next, release any tension in your shoulders with slow, gentle movements, letting your posture settle comfortably into your support. Finally, bring your awareness to your breathing: take a deep, slow inhalation through your nose, expanding your chest softly, and release the breath in a long, calming exhale. Rest easy and enjoy your day of vitality."
             elif language == "pt":
-                response_text = "Bem-vindo ao AL CIELO. Esta sessão é para o seu bem-estar geral. Por favor, adote uma postura confortável onde quer que esteja hoje. Inspire profundamente pelo nariz e expire devagar pela boca."
+                response_text = "Bem-vindo ao AL CIELO. Onde quer que esteja descansando hoje, adote uma postura confortável. Comece abrindo e fechando suavemente os dedos das mãos e dos pés, sentindo o calor natural e a circulação retornando às extremidades. Em seguida, libere qualquer tensão nos ombros com movimentos lentos e suaves. Por fim, traga sua atenção para a respiração: faça uma inspiração profunda pelo nariz e expire longamente pela boca, encontrando calma e bem-estar."
             else:
-                response_text = "Bienvenido a AL CIELO. Esta sesión es de bienestar general. Tome una postura cómoda donde quiera que esté hoy. Inhale profundamente por la nariz y exhale despacio por la boca."
+                response_text = "Bienvenido a AL CIELO. Dondequiera que esté descansando hoy, adopte una postura cómoda. Comience abriendo y cerrando suavemente los dedos de sus manos y de sus pies, sintiendo el calor natural y la circulación que regresa a sus extremidades. A continuación, libere cualquier tensión en sus hombros con movimientos lentos y suaves, permitiendo que su postura se relaje por completo. Finalmente, lleve su atención a la respiración: realice una inhalación profunda por la nariz, expandiendo su pecho con suavidad, y exhale de forma larga y pausada para calmar su mente y cuerpo."
 
         return {"status": "success", "session_content": response_text}
     except HTTPException:
