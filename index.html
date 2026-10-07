@@ -37,7 +37,7 @@ select{font-size:1.1rem;padding:14px;width:100%;border-radius:8px;border:1px sol
 .payment-error{background:#450a0a;color:#fecaca;border:1px solid #ef4444}
 .legal-notice{font-size:.85rem;color:#64748b;margin-top:25px;border-top:1px solid #334155;padding-top:15px;line-height:1.4;text-align:center}
 
-/* Círculo respiratorio dinámico (aparece solo cuando se habla de respiración) */
+/* Círculo respiratorio dinámico adaptado a la IA */
 #breathing-circle-container {
 display: none;
 flex-direction: column;
@@ -51,8 +51,8 @@ border-radius: 8px;
 text-align: center;
 }
 .b-circle {
-width: 100px;
-height: 100px;
+width: 120px;
+height: 120px;
 border-radius: 50%;
 background: rgba(56, 189, 248, 0.2);
 border: 3px solid #38bdf8;
@@ -62,14 +62,11 @@ justify-content: center;
 margin: 10px auto;
 font-weight: bold;
 color: #38bdf8;
-transition: transform 4s ease-in-out;
-}
-.b-animating {
-animation: breatheAnim 8s infinite ease-in-out;
+animation: breatheAnim 6s infinite ease-in-out;
 }
 @keyframes breatheAnim {
 0%, 100% { transform: scale(0.85); background: rgba(56, 189, 248, 0.15); }
-50% { transform: scale(1.25); background: rgba(56, 189, 248, 0.35); }
+50% { transform: scale(1.2); background: rgba(56, 189, 248, 0.35); }
 }
 </style>
 </head>
@@ -114,8 +111,8 @@ animation: breatheAnim 8s infinite ease-in-out;
 
 <!-- Contenedor dinámico del círculo de respiración -->
 <div id="breathing-circle-container">
-<span id="b-label" style="font-size:0.95rem;color:#94a3b8;font-weight:bold;">Guía de Respiración</span>
-<div class="b-circle b-animating" id="breathingCircleEl"></div>
+<span id="b-label" style="font-size:0.95rem;color:#94a3b8;font-weight:bold;">Guía de Respiración Consciente</span>
+<div class="b-circle" id="breathingCircleEl"></div>
 </div>
 
 <div class="control-group" style="background:#111827;padding:15px;border-radius:8px;text-align:center;border:1px dashed #374151">
@@ -278,7 +275,7 @@ const sessionBtn=document.getElementById("btn-sess");
 
 box.style.display="block";
 audioBtn.style.display="none";
-ocultarCirculoRespiracion();
+document.getElementById("breathing-circle-container").style.display="none";
 
 if(isHook){
 box.innerText=lang==="es"?"Preparando su muestra gratuita...":lang==="pt"?"Preparando sua amostra gratuita...":"Preparing your free preview...";
@@ -304,10 +301,14 @@ if(response.ok){
 ultimoTextoGenerado=data.session_content||"";
 box.innerText=ultimoTextoGenerado;
 audioBtn.style.display="block";
+
+// Evaluar el texto generado por la IA de inmediato
+verificarYMostrarCirculo(ultimoTextoGenerado);
+
 reproducirVozHumana();
 }else if(response.status===403){
 box.innerText=lang==="es"
-?"Este dispositivo no tiene una suscripción activa. Active la suscripción de $15.99 para iniciar la sesión completa."
+?"Este dispositivo não tem uma assinatura ativa. Active la suscripción de $15.99 para iniciar la sesión completa."
 :lang==="pt"
 ?"Este dispositivo não possui uma assinatura ativa. Ative a assinatura de $15.99 para iniciar a sessão completa."
 :"This device does not have an active subscription. Activate the $15.99 subscription to start the full session.";
@@ -321,26 +322,17 @@ sessionBtn.disabled=false;
 }
 }
 
-function mostrarCirculoRespiracion(palabra){
-const container = document.getElementById("breathing-circle-container");
-const circleEl = document.getElementById("breathingCircleEl");
-const labelEl = document.getElementById("b-label");
+function verificarYMostrarCirculo(texto){
+const textoMinus = texto.toLowerCase();
+const palabrasClave = ["respir", "inhal", "exhal", "breath", "respiração", "respire", "inhale", "exhale", "oxigen"];
+const esBreathing = palabrasClave.some(p => textoMinus.includes(p));
 
+const container = document.getElementById("breathing-circle-container");
+if(esBreathing){
 container.style.display = "flex";
-
-const lang = document.getElementById("languageSelect").value;
-if(lang === "es") {
-labelEl.innerText = "Respiración Consciente (" + palabra + ")";
-} else if(lang === "pt") {
-labelEl.innerText = "Respiração Consciente (" + palabra + ")";
 } else {
-labelEl.innerText = "Mindful Breathing (" + palabra + ")";
-}
-}
-
-function ocultarCirculoRespiracion(){
-const container = document.getElementById("breathing-circle-container");
 container.style.display = "none";
+}
 }
 
 function reproducirVozHumana(){
@@ -359,26 +351,6 @@ const lang=document.getElementById("languageSelect").value;
 utterance.lang=lang==="es"?"es-ES":lang==="pt"?"pt-PT":"en-US";
 utterance.rate=.85;
 utterance.pitch=1;
-
-// Detectar cuando menciona palabras clave de respiración para mostrar y animar el círculo
-utterance.onboundary = (event) => {
-if(event.name === "word") {
-const spokenWord = textoLimpio.substring(event.charIndex, event.charIndex + event.charLength).toLowerCase();
-const palabrasRespiracion = ["respir", "inhal", "exhal", "breath", "respiracao", "respire", "inhale", "exhale"];
-const esRespiracion = palabrasRespiracion.some(p => spokenWord.includes(p));
-
-if(esRespiracion) {
-mostrarCirculoRespiracion(spokenWord);
-}
-}
-};
-
-utterance.onend = () => {
-// Ocultar al terminar la locución si se desea, o dejarlo un momento
-setTimeout(() => {
-ocultarCirculoRespiracion();
-}, 2000);
-};
 
 window.speechSynthesis.speak(utterance);
 }
@@ -491,6 +463,8 @@ lang==="pt"?"Ainda não foi possível verificar a ativação.":
 }
 },1500);
 }
+
+document.getElementById("breathing-circle-container").style.display="none";
 
 document.addEventListener("DOMContentLoaded",()=>{
 getDeviceId();
