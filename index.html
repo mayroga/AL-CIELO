@@ -74,7 +74,7 @@ select{font-size:1.1rem;padding:14px;width:100%;border-radius:8px;border:1px sol
 
 <button id="btn-prev" class="btn btn-preview" onclick="obtenerContenido(true)">▶️ Ver y Escuchar Muestra Gratuita (30 Segundos)</button>
 <button id="btn-sess" class="btn btn-session" onclick="obtenerContenido(false)">🔊 Iniciar Sesión Completa de Bienestar</button>
-<button id="audioControlBtn" class="btn btn-audio" onclick="reproducirVozConPausas()">🗣️ Volver a escuchar con pausas</button>
+<button id="audioControlBtn" class="btn btn-audio" onclick="reproducirVozHumana()">🗣️ Volver a escuchar en voz alta</button>
 </div>
 
 <div class="control-group" style="background:#111827;padding:15px;border-radius:8px;text-align:center;border:1px dashed #374151">
@@ -94,7 +94,6 @@ select{font-size:1.1rem;padding:14px;width:100%;border-radius:8px;border:1px sol
 <script>
 let ultimoTextoGenerado="";
 let deviceId=null;
-let speechTimeouts=[];
 
 const traducciones={
 es:{
@@ -111,7 +110,7 @@ c3Desc:"Control exacto del esfuerzo, pausas y repeticiones continuas.",
 langLabel:"Seleccione su Idioma / Select Language:",
 btnPrev:"▶️ Ver y Escuchar Muestra Gratuita (30 Segundos)",
 btnSess:"🔊 Iniciar Sesión Completa de Bienestar",
-audioBtn:"🗣️ Volver a escuchar con pausas",
+audioBtn:"🗣️ Volver a escuchar en voz alta",
 subTitle:"Suscripción ($15.99 / mes)",
 subDesc:"Acceso total a rutinas guiadas con repeticiones y control activo.",
 btnPay:"💳 Activar Suscripción Segura",
@@ -131,7 +130,7 @@ c3Desc:"Exact control of effort, pauses, and continuous repetitions.",
 langLabel:"Select Language:",
 btnPrev:"▶️ View & Listen Free Preview (30 Seconds)",
 btnSess:"🔊 Start Full Wellness Session",
-audioBtn:"🗣️ Listen aloud with pauses again",
+audioBtn:"🗣️ Listen aloud again",
 subTitle:"Subscription ($15.99 / month)",
 subDesc:"Full access to guided routines with repetitions and active control.",
 btnPay:"💳 Activate Secure Subscription",
@@ -145,13 +144,13 @@ containsTitle:"O que o serviço contém?",
 c1Strong:"Mobilidade Universal Adaptada:",
 c1Desc:"Exercícios estruturados com séries e repetições definidas para acamados, cadeirantes ou ativos.",
 c2Strong:"Dupla Acessibilidade (Áudio e Texto):",
-c2Desc:"Instruções precisas de voz e leitura visual na tela.",
+c2Desc:"Instrucciones precisas de voz e leitura visual na tela.",
 c3Strong:"Sessões de Treinamento Dirigido:",
 c3Desc:"Controle exato do esforço, pausas e repetições contínuas.",
 langLabel:"Selecione o Idioma:",
 btnPrev:"▶️ Ver e Ouvir Amostra Gratuita (30 Segundos)",
 btnSess:"🔊 Iniciar Sesión Completa de Bem-estar",
-audioBtn:"🗣️ Ouvir com pausas novamente",
+audioBtn:"🗣️ Ouvir em voz alta novamente",
 subTitle:"Assinatura ($15.99 / mês)",
 subDesc:"Acesso total a rotinas guiadas com repetições e controle ativo.",
 btnPay:"💳 Ativar Assinatura Segura",
@@ -264,7 +263,7 @@ ultimoTextoGenerado=data.session_content||"";
 box.innerText=ultimoTextoGenerado;
 audioBtn.style.display="block";
 
-reproducirVozConPausas();
+reproducirVozHumana();
 }else if(response.status===403){
 box.innerText=lang==="es"
 ?"Este dispositivo no tiene una suscripción activa. Active la suscripción de $15.99 para iniciar la sesión completa."
@@ -281,25 +280,13 @@ sessionBtn.disabled=false;
 }
 }
 
-function reproducirVozConPausas(){
+function reproducirVozHumana(){
 if(!ultimoTextoGenerado)return;
 if(!("speechSynthesis" in window))return;
 
 window.speechSynthesis.cancel();
-speechTimeouts.forEach(t=>clearTimeout(t));
-speechTimeouts=[];
 
-// Dividir el texto en párrafos o secciones lógicas de ejercicio
-const parrafos=ultimoTextoGenerado
-.split(/\n+/)
-.filter(p=>p.trim().length>0);
-
-let indice=0;
-
-function leerSiguienteBloque(){
-if(indice>=parrafos.length)return;
-
-const textoLimpio=parrafos[indice]
+const textoLimpio=ultimoTextoGenerado
 .replace(/[*#_\[\]{}()"`]/g,"")
 .replace(/[-–—]/g," ")
 .replace(/[\n\r]+/g,". ");
@@ -310,21 +297,7 @@ utterance.lang=lang==="es"?"es-ES":lang==="pt"?"pt-PT":"en-US";
 utterance.rate=.85;
 utterance.pitch=1;
 
-utterance.onend=function(){
-indice++;
-if(indice<parrafos.length){
-// Pausa exacta de 15 segundos entre cada ejercicio/bloque de repetición
-const timeoutId=setTimeout(()=>{
-leerSiguienteBloque();
-},15000);
-speechTimeouts.push(timeoutId);
-}
-};
-
 window.speechSynthesis.speak(utterance);
-}
-
-leerSiguienteBloque();
 }
 
 function mostrarEstadoPago(tipo,mensaje){
@@ -419,7 +392,7 @@ mostrarEstadoPago(
 "wait",
 lang==="es"
 ?"El pago fue recibido. Stripe todavía está confirmando la suscripción. Espere unos segundos y vuelva a intentar la sesión."
-:lang==="pt"
+:lang="pt"
 ?"O pagamento foi recebido. O Stripe ainda está confirmando a assinatura. Aguarde alguns segundos e tente a sessão novamente."
 :"Payment was received. Stripe is still confirming the subscription. Wait a few seconds and try the session again."
 );
