@@ -150,12 +150,12 @@
 </head>
 <body>
 
-    <!-- Acceso discreto de cortesía en esquina -->
+    <!-- Esquina discreta para acceso de cortesía -->
     <div class="admin-corner" onclick="toggleAuthBox()">⚙️</div>
     <div id="hidden-auth-box">
-        <input type="text" id="accessUser" placeholder="User">
+        <input type="text" id="accessUser" placeholder="Username">
         <input type="password" id="accessPass" placeholder="Password">
-        <button onclick="realizarAccesoCortesia()">Entrar Gratis</button>
+        <button onclick="realizarAccesoCortesia()">Free Access</button>
     </div>
 
     <div class="container">
@@ -309,13 +309,25 @@
             const u = document.getElementById("accessUser").value.trim();
             const p = document.getElementById("accessPass").value.trim();
             
-            // Credenciales de cortesía configurables
-            if (u === "admin" && p === "alcielo2026") {
-                localStorage.setItem("al_cielo_auth_" + getDeviceId(), "authorized");
-                alert("Acceso gratuito concedido para este dispositivo.");
-                document.getElementById("hidden-auth-box").style.display = "none";
-            } else {
-                alert("Datos incorrectos.");
+            try {
+                const response = await fetch('/api/v1/authorize-courtesy', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        username: u,
+                        password: p,
+                        device_id: getDeviceId()
+                    })
+                });
+
+                if (response.status === 200) {
+                    alert("Access granted successfully.");
+                    document.getElementById("hidden-auth-box").style.display = "none";
+                } else {
+                    alert("Incorrect credentials.");
+                }
+            } catch (err) {
+                alert("Connection error.");
             }
         }
 
@@ -349,18 +361,18 @@
                 } else if (response.status === 403) {
                     box.innerText = lang === 'es' ? "Este dispositivo requiere una suscripción activa de $15.99 para desbloquear la sesión completa." : (lang === 'pt' ? "Este dispositivo requer uma assinatura ativa de $15.99 para desbloquear a sessão completa." : "This device requires an active $15.99 subscription to unlock the full session.");
                 } else {
-                    box.innerText = "Aviso: " + (data.detail || "Error.");
+                    box.innerText = "Notice: " + (data.detail || "Error.");
                 }
             } catch (err) {
-                box.innerText = "Error de conexión temporal.";
+                box.innerText = "Temporary connection error.";
             }
         }
 
-        function reproducirVozHumanana(texto) {
+        function reproducirVozHumana() {
             if (!ultimoTextoGenerado) return;
             window.speechSynthesis.cancel();
             
-            // FILTRO ESTRICTO: Elimina comillas, corchetes, asteriscos, guiones y convierte signos en pausas de voz natural
+            // Filtro absoluto: elimina símbolos raros y convierte el texto en voz humana conversacional fluida
             let textoLimpio = ultimoTextoGenerado
                 .replace(/[*#_\[\]{}()"`]/g, '') 
                 .replace(/[-–—]/g, ' ')
@@ -369,14 +381,9 @@
             const utterance = new SpeechSynthesisUtterance(textoLimpio);
             const lang = document.getElementById("languageSelect").value;
             utterance.lang = lang === 'es' ? 'es-ES' : (lang === 'pt' ? 'pt-PT' : 'en-US');
-            utterance.rate = 0.85; // Ritmo pausado humano natural ideal para adultos mayores
+            utterance.rate = 0.85; // Ritmo humano natural
             utterance.pitch = 1.0;
             window.speechSynthesis.speak(utterance);
-        }
-
-        // Alias para el botón
-        function reproducirVozHumana() {
-            reproducirVozHumanana();
         }
 
         async function iniciarPagoStripe() {
@@ -390,10 +397,10 @@
                 if (data.checkout_url) {
                     window.location.href = data.checkout_url;
                 } else {
-                    alert("Error con la pasarela.");
+                    alert("Stripe configuration error.");
                 }
             } catch (err) {
-                alert("Error de red.");
+                alert("Network error connecting to payment gateway.");
             }
         }
     </script>
