@@ -10,7 +10,7 @@ from google import genai
 from google.genai import types
 import openai
 
-app = FastAPI(title="AL CIELO - Production Engine", version="3.9.1")
+app = FastAPI(title="AL CIELO - Production Engine", version="3.9.2")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -122,9 +122,8 @@ STRICT LEGAL & OPERATIONAL RULES:
 """
 
 
-# BANCO DE 20 RESPALDOS AMPLIADOS (DOBLE DE LARGOS, 100% BIENESTAR Y CERO TÉRMINOS MÉDICOS)
+# BANCO DE 20 RESPALDOS AMPLIADOS (100% BIENESTAR Y CERO TÉRMINOS MÉDICOS)
 FALLBACK_SESSIONS_ES = [
-    # 1
     (
         "Bienvenido a su espacio personal de bienestar y armonía diaria. Tómese un instante para acomodarse con absoluta comodidad, ya sea sentado plácidamente en su sillón favorito o descansando de forma reposada en su cama. "
         "Vamos a comenzar este momento de pausa centrando toda nuestra atención en el ritmo natural de la respiración. Sienta cómo el aire fresco ingresa suavemente a través de su nariz, recorre su interior y sale despacio, aliviando cualquier rastro de tensión acumulada en el día. "
@@ -134,7 +133,6 @@ FALLBACK_SESSIONS_ES = [
         "Permítase un momento para desconectarse de las distracciones externas y habitar este presente lleno de tranquilidad. Su postura debe sentirse cómoda, sin forzar absolutamente nada; simplemente deje que el cuerpo encuentre su propio estado de relajación natural. "
         "Continuamos manteniendo este flujo de aire constante, notando cómo cada exhalación regala una sensación de descanso renovador a cada fibra de su ser, brindándole estabilidad, esperanza y un profundo bienestar interior en este espacio diseñado exclusivamente para usted."
     ),
-    # 2
     (
         "Comenzamos este momento especial dedicado enteramente a su descanso, equilibrio físico y confort cotidiano. Ubíquese en la posición que hoy le brinde mayor seguridad y bienestar general. "
         "Vamos a dirigir la atención hacia el área del cuello y la cabeza, realizando un movimiento imperceptible y muy delicado de lado a lado solo si su cuerpo se lo permite de manera natural, o bien visualizando ese movimiento con total serenidad en su mente. "
@@ -143,7 +141,6 @@ FALLBACK_SESSIONS_ES = [
         "Si se encuentra recostado o descansando en su cama, sienta el soporte completo de su espalda, la almohada sosteniendo su cabeza con firmeza y los brazos reposando en un ángulo de total comodidad. "
         "Vamos a mantener esta cadencia de respiración pausada, permitiendo que el tiempo transcurra con suavidad, sin prisa, acompañando cada minuto con una actitud abierta, positiva y reconfortante."
     ),
-    # 3
     (
         "Un cordial saludo en esta nueva sesión de cuidado personal y bienestar integral. Conéctese con su comodidad adoptando una postura que le ofrezca un soporte firme, relajado y completamente seguro. "
         "Hoy centraremos nuestra atención en la apertura del pecho y en la expansión de una respiración amplia y fluida. Si tiene movilidad en sus brazos, deslícelos con delicadeza hacia una posición de mayor holgura; de lo contrario, concéntrese por completo en percibir la expansión y contracción natural del tórax al compás del aire. "
@@ -152,7 +149,6 @@ FALLBACK_SESSIONS_ES = [
         "Mantenga su mente enfocada en este instante presente, disfrutando del silencio constructivo y de la compañía de esta guía diseñada para propiciar un estado óptimo de relajación y estabilidad. "
         "Siga respirando de manera lenta, permitiendo que la calma se expanda desde el centro de su pecho hacia los brazos, las manos y el resto de su cuerpo, consolidando un refugio de paz interior."
     ),
-    # 4
     (
         "Le damos la más cordial bienvenida a su pausa activa y restaurativa de hoy. Sin importar si se encuentra en plena actividad cotidiana, sentado con comodidad o descansando plácidamente en cama, la prioridad absoluta es su confort. "
         "Vamos a llevar una suave conciencia hacia los puntos de apoyo principales de su cuerpo: la espalda, las piernas o los brazos, reconociendo el espacio físico que habita con total gratitud. "
@@ -161,7 +157,6 @@ FALLBACK_SESSIONS_ES = [
         "Este ejercicio promueve una sensación inigualable de ligereza y descanso profundo. Permítase flotar en esta atmósfera de tranquilidad, donde el único objetivo es su bienestar y su comodidad absoluta. "
         "Continuamos respirando con suavidad, dejando que los minutos transcurran en un entorno de paz, equilibrio y seguridad inquebrantable."
     ),
-    # 5
     (
         "Iniciamos este momento de profunda conexión con su bienestar personal y equilibrio físico. Acomódese con absoluta libertad y cierre los ojos si le apetece, permitiendo que la voz le acompañe paso a paso en este recorrido de relajación. "
         "Hoy trabajaremos en la disolución de tensiones acumuladas en la parte superior del cuerpo. Relaje los músculos de la cara, despegue ligeramente los dientes, deje caer los hombros alejándolos de las orejas y respire profundamente. "
@@ -170,7 +165,6 @@ FALLBACK_SESSIONS_ES = [
         "Este espacio está pensado para brindarle estabilidad y esperanza, permitiéndole reconectar con su centro de energía y tranquilidad. "
         "Siga disfrutando de este compás pausado, sabiendo que cada inhalación fortalece su equilibrio y cada exhalación borra cualquier rastro de prisa o inquietud."
     ),
-    # 6
     (
         "Bienvenido a su rutina de relajación y movimiento adaptado para el bienestar general. Tome aire de manera natural, profunda y dosificada, permitiendo que el área del abdomen se expanda con total libertad. "
         "Vamos a realizar un recorrido mental consciente por todo su cuerpo, reconociendo cada parte con afecto y respeto por su estado actual. "
@@ -179,7 +173,6 @@ FALLBACK_SESSIONS_ES = [
         "La constancia en estos pequeños hábitos de pausa aporta una gran estabilidad emocional y física, ayudando a que su día transcurra con mayor fluidez y serenidad. "
         "Permanezca receptivo a esta sensación de descanso, dejando que el cuerpo se recupere y encuentre su propia naturalidad sin prisas ni presiones de ninguna índole."
     ),
-    # 7
     (
         "Es un verdadero placer acompañarle en este espacio de bienestar estructurado exclusivamente para su comodidad. Sintonice con el momento presente ajustando su postura hasta hallar el punto exacto de reposo y confort. "
         "Vamos a enfocar la atención en el centro de su cuerpo, permitiendo que cada inhalación traiga una bocanada de energía renovada y que cada exhalación se lleve cualquier molestia superficial. "
@@ -188,7 +181,6 @@ FALLBACK_SESSIONS_ES = [
         "Sienta el respaldo firme que lo sostiene y entregue el peso de su cuerpo a la superficie con total confianza, sabiendo que se encuentra en un entorno seguro y protector. "
         "Continúe respirando lento y profundo mientras acompañamos cada instante con serenidad, armonía y un profundo respeto por su comodidad."
     ),
-    # 8
     (
         "Comenzamos una nueva práctica enfocada en su paz interior, estabilidad y confort físico general. Adopte una postura que le proporcione un soporte óptimo y una sensación inquebrantable de seguridad. "
         "Vamos a relajar paulatinamente los dedos de las manos, los brazos y la columna vertebral mediante respiraciones profundas, pausadas y bien dirigidas. "
@@ -197,7 +189,6 @@ FALLBACK_SESSIONS_ES = [
         "Cada ciclo de aire fresco limpia su mente y revitaliza su postura, permitiéndole experimentar una profunda renovación desde la comodidad de su asiento o cama. "
         "Disfrute de la estabilidad y la paz que este espacio le otorga en cada segundo, manteniendo una actitud de calma y bienestar duradero."
     ),
-    # 9
     (
         "Bienvenido a su sesión de revitalización, descanso y equilibrio armónico. Busque la postura más cómoda y favorable disponible para usted en este preciso momento. "
         "Dirigiremos la atención hacia la zona de los hombros y la parte alta de la espalda, imaginando que una brisa ligera y cálida disuelve cualquier rigidez presente. "
@@ -206,7 +197,6 @@ FALLBACK_SESSIONS_ES = [
         "Este proceso favorece la distensión muscular y le otorga un valioso momento de tregua frente a las exigencias del día a día. "
         "Siga respirando de este modo, permitiendo que la tranquilidad inunde cada espacio de su mente y su cuerpo con total naturalidad."
     ),
-    # 10
     (
         "Cerramos nuestro ciclo de recomendaciones de bienestar con una sesión centrada en la serenidad absoluta y el confort restaurador. Acomódese con la absoluta certeza de que este tiempo le pertenece por completo. "
         "Vamos a unificar la respiración con pequeños movimientos conscientes o con una visualización profunda de ligereza y bienestar en todo su entorno. "
@@ -215,7 +205,6 @@ FALLBACK_SESSIONS_ES = [
         "Permanezca unos instantes disfrutando de esta sensación de plenitud, con la tranquilidad de haber dedicado un espacio genuino a su armonía personal. "
         "Inhale profundo por última vez en esta sesión, sonría con suavidad y prepárese para continuar su día con una renovada sensación de paz y bienestar."
     ),
-    # 11 (NUEVO)
     (
         "Iniciamos un nuevo espacio dedicado por completo a su bienestar cotidiano y a la paulatina relajación de todo su sistema físico. Adopte una postura que le resulte sumamente agradable y placentera. "
         "Lleve su mente hacia las palmas de las manos, imaginando que una agradable sensación de calor las recorre suavemente. Si descansa en cama, permita que el colchón soporte enteramente su peso sin que usted deba realizar esfuerzo alguno. "
@@ -223,59 +212,50 @@ FALLBACK_SESSIONS_ES = [
         "Esta práctica está diseñada para propiciar un remanso de paz en medio de su jornada, ayudándole a recuperar la energía vital mediante la quietud y la respiración consciente. "
         "Permita que la tranquilidad le envuelva por completo, disfrutando de cada instante en este refugio de confort y armonía personal."
     ),
-    # 12 (NUEVO)
     (
         "Le damos la bienvenida a esta sesión orientada al equilibrio y la distensión integral. Ajuste su posición corporal para garantizar que su cuello, espalda y extremidades se encuentren plenamente respaldados. "
         "Concentre su atención en el simple acto de respirar: perciba la temperatura del aire al entrar y la calidez al salir de su cuerpo. "
         "Si nota alguna pequeña tensión en el rostro o en la mandíbula, relájela intencionalmente permitiendo que los labios se entreabran con total naturalidad. "
         "Cada inhalación le aporta serenidad y cada exhalación afianza una profunda sensación de estabilidad en su entorno. Disfrute de este valioso tiempo de cuidado y descanso."
     ),
-    # 13 (NUEVO)
     (
         "Comenzamos una pausa restaurativa centrada en el alivio y la comodidad física. Relaje los brazos a los lados de su cuerpo o sobre su regazo de la manera más cómoda posible. "
         "Visualice una suave onda de bienestar que desciende lentamente desde la coronilla hasta la punta de los pies, disipando cualquier rigidez a su paso. "
         "Acompañe este recorrido mental con respiraciones rítmicas, profundas y sumamente calmadas, evitando cualquier prisa o exigencia. "
         "Este espacio seguro es suyo para recargar energías, encontrar paz mental y disfrutar de un confort duradero."
     ),
-    # 14 (NUEVO)
     (
         "Saludamos este instante de pausa y armonía enfocado en su bienestar personal. Conéctese con la firmeza del suelo o de la cama que sostiene su cuerpo en este momento. "
         "Permita que la respiración se vuelva cada vez más lenta y profunda, sirviendo como un ancla segura para mantener la mente tranquila y despejada. "
         "Si lo prefiere, mantenga los ojos cerrados mientras su atención descansa apaciblemente en el flujo constante del aire. "
         "Disfrute de la estabilidad y el sosiego que esta práctica le otorga, consolidando un estado óptimo de relajación y descanso."
     ),
-    # 15 (NUEVO)
     (
         "Nos adentramos en una sesión pensada para brindarle un respiro profundo y una total distensión corporal. Colóquese en la postura que le aporte mayor desahogo y confort. "
         "Dirija su mirada interior hacia la zona de la espalda y los hombros, permitiendo que el peso de los mismos se deslice hacia la superficie de apoyo. "
         "Respire con absoluta calma, llenando su interior de esperanza, bienestar y una agradable sensación de liviandad. "
         "Este es su momento para habitar el presente con total tranquilidad y seguridad."
     ),
-    # 16 (NUEVO)
     (
         "Bienvenido a este momento de armonización y cuidado de su estilo de vida. Tome una posición que le permita relajar por completo la columna y la zona lumbar. "
         "Inhale aire fresco con alegría, sosténgalo unos segundos con suavidad, y expúlselo lentamente dejando ir cualquier rigidez del entorno. "
         "Permita que la quietud y el silencio fortalezcan su paz interior, disfrutando plenamente de cada minuto de este descanso enriquecedor."
     ),
-    # 17 (NUEVO)
     (
         "Iniciamos una práctica destinada a cultivar el confort, el equilibrio y la paz en su día a día. Sienta el soporte de la almohada o el respaldar adaptándose a su forma. "
         "Realice respiraciones profundas y pausadas, centrando toda su atención en el bienestar que surge al soltar las tensiones cotidianas. "
         "Disfrute de este espacio exclusivo de tranquilidad, diseñado para restaurar su energía vital con absoluta naturalidad y seguridad."
     ),
-    # 18 (NUEVO)
     (
         "Comenzamos un espacio de descanso y relajación profunda para acompañar su rutina de bienestar. Adopte una postura cómoda, libre de presiones y exigencias. "
         "Sienta el flujo rítmico de su respiración y cómo cada ciclo le otorga una mayor sensación de ligereza y estabilidad interior. "
         "Permanezca en este refugio de paz, disfrutando del silencio constructivo y de una total comodidad física."
     ),
-    # 19 (NUEVO)
     (
         "Le saludamos en esta sesión de pausa y armonía diseñada para su confort diario. Ubíquese en el sitio que le ofrezca mayor solidez y bienestar. "
         "Conecte con su respiración natural, permitiendo que el aire limpie y relaje cada rincón de su cuerpo de manera apacible y constante. "
         "Disfrute de este momento de tregua, estabilidad y cuidado personal sin prisas."
     ),
-    # 20 (NUEVO)
     (
         "Finalizamos nuestro repertorio de bienestar con una sesión orientada al equilibrio absoluto y la paz interior. Acomódese con la certeza de que este tiempo es suyo. "
         "Respire hondo, relaje los músculos del rostro y entregue su peso corporal a la superficie con absoluta confianza y serenidad. "
@@ -473,7 +453,7 @@ Output ONLY plain conversational text in {selected_lang_name}. No meta-commentar
 
         response_text = ""
 
-        # INTENTO 1: GEMINI (con límite de 20 segundos)
+        # INTENTO 1: GEMINI (Límite optimizado de 10 segundos)
         if gemini_client:
             try:
                 response_task = asyncio.to_thread(
@@ -486,12 +466,12 @@ Output ONLY plain conversational text in {selected_lang_name}. No meta-commentar
                         max_output_tokens=max_tokens,
                     )
                 )
-                gemini_response = await asyncio.wait_for(response_task, timeout=20.0)
+                gemini_response = await asyncio.wait_for(response_task, timeout=10.0)
                 response_text = gemini_response.text or ""
             except Exception:
                 response_text = ""
 
-        # INTENTO 2: OPENAI COMO RESPALDO AUTOMÁTICO (Si Gemini falló o superó los 20 segundos)
+        # INTENTO 2: OPENAI COMO RESPALDO INMEDIATO (Si Gemini falló o superó los 10s, límite de 8s)
         if not response_text and openai_client:
             try:
                 openai_task = asyncio.to_thread(
@@ -504,12 +484,12 @@ Output ONLY plain conversational text in {selected_lang_name}. No meta-commentar
                     temperature=0.98,
                     max_tokens=max_tokens
                 )
-                openai_response = await asyncio.wait_for(openai_task, timeout=20.0)
+                openai_response = await asyncio.wait_for(openai_task, timeout=8.0)
                 response_text = openai_response.choices[0].message.content or ""
             except Exception:
                 response_text = ""
 
-        # BANCO DE RESPALDO ROTATIVO DE 20 OPCIONES LARGAS DE BIENESTAR PURAS
+        # INTENTO 3: BANCO DE RESPALDO ROTATIVO DE 20 OPCIONES DE BIENESTAR (Si ninguna IA respondió)
         if not response_text or len(response_text) < 400:
             if is_hook:
                 response_text = "Muestra Gratuita (30s): Bienvenido a AL CIELO. Adopte una postura cómoda, inhale hondo por la nariz y relaje suavemente sus hombros."
