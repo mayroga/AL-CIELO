@@ -376,38 +376,78 @@ if(v)return v;
 return voices.find(x=>x.lang&&x.lang.toLowerCase().startsWith(lang))||null;
 }
 
+/* VOZ: SOLO LEE LOS PÁRRAFOS DEL CONTENIDO.
+   NO LEE TÍTULOS, ENCABEZADOS NI OTROS ELEMENTOS DE LA PANTALLA.
+   ESPERA 8 SEGUNDOS DESPUÉS DE TERMINAR CADA PÁRRAFO. */
 function hablarSiguienteParrafo(){
 if(!vozActiva||vozCancelada)return;
+
 if(indiceVoz>=parrafosVoz.length){
 vozActiva=false;
 return;
 }
-const texto=parrafosVoz[indiceVoz++];
+
+const texto=String(parrafosVoz[indiceVoz]||"").trim();
+
+if(!texto){
+indiceVoz++;
+setTimeout(hablarSiguienteParrafo,ESPERA_ENTRE_PARRAFOS);
+return;
+}
+
 const u=new SpeechSynthesisUtterance(texto);
 u.lang=idiomaActual==="es"?"es-ES":idiomaActual==="en"?"en-US":"pt-BR";
+
 const voz=seleccionarVoz(idiomaActual);
 if(voz)u.voice=voz;
+
 u.rate=.92;
 u.pitch=1;
 u.volume=1;
+
+let termino=false;
+
 u.onend=()=>{
+if(termino)return;
+termino=true;
+
 if(!vozActiva||vozCancelada)return;
-setTimeout(hablarSiguienteParrafo,ESPERA_ENTRE_PARRAFOS);
+
+indiceVoz++;
+
+setTimeout(()=>{
+if(!vozActiva||vozCancelada)return;
+hablarSiguienteParrafo();
+},ESPERA_ENTRE_PARRAFOS);
 };
+
 u.onerror=()=>{
+if(termino)return;
+termino=true;
+
 if(!vozActiva||vozCancelada)return;
-setTimeout(hablarSiguienteParrafo,ESPERA_ENTRE_PARRAFOS);
+
+indiceVoz++;
+
+setTimeout(()=>{
+if(!vozActiva||vozCancelada)return;
+hablarSiguienteParrafo();
+},ESPERA_ENTRE_PARRAFOS);
 };
+
 window.speechSynthesis.speak(u);
 }
 
 function iniciarVozPorParrafos(){
 if(!ultimoTextoGenerado)return;
+
 window.speechSynthesis.cancel();
+
 vozCancelada=false;
 parrafosVoz=separarParrafos(ultimoTextoGenerado);
 indiceVoz=0;
 vozActiva=true;
+
 hablarSiguienteParrafo();
 }
 
@@ -416,12 +456,14 @@ if(!ultimoTextoGenerado){
 document.getElementById("status").textContent=t("noContent");
 return;
 }
+
 if(window.speechSynthesis.speaking||vozActiva){
 window.speechSynthesis.cancel();
 vozActiva=false;
 vozCancelada=true;
 return;
 }
+
 iniciarVozPorParrafos();
 }
 
