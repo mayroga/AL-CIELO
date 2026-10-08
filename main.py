@@ -140,7 +140,7 @@ def S(titles,*rows):
             "exercises":[
                 {
                     "title":f"Parte {n+1}",
-                    "instruction":row[i]
+                    "instruction":row[lang]
                 }
                 for n,row in enumerate(rows)
             ]
