@@ -9,40 +9,40 @@
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;background:#0f172a;color:#fff;font-family:Arial,Helvetica,sans-serif}
 body{min-height:100vh}
-.container{width:min(900px,94%);margin:0 auto;padding:18px 0 40px}
-header{position:relative;text-align:center;padding:10px 40px 18px}
-h1{font-size:clamp(28px,6vw,46px);margin:4px 0 8px;letter-spacing:.5px}
+.container{width:min(900px,94%);margin:auto;padding:12px 0 30px}
+header{text-align:center;position:relative;padding:8px 35px 12px}
+h1{font-size:clamp(28px,6vw,46px);margin:4px 0 6px}
 .subtitle{font-size:18px;line-height:1.5;color:#dbeafe;margin:0}
-.admin{position:absolute;right:4px;top:4px}
-.admin button{background:transparent;border:0;color:#64748b;font-size:15px;padding:4px;cursor:pointer}
-.auth{display:none;margin:8px 0 18px;padding:12px;border:1px solid #334155;border-radius:10px;background:#111827}
-.auth input{width:100%;padding:10px;margin:4px 0;background:#0f172a;border:1px solid #475569;border-radius:7px;color:#fff}
-.auth button{padding:9px 14px;border:0;border-radius:7px;background:#2563eb;color:#fff;cursor:pointer}
-.card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:20px;margin:14px 0}
-.card h2{font-size:22px;margin:0 0 12px}
-.card h3{font-size:18px;margin:18px 0 7px}
-.card p{font-size:17px;line-height:1.65;margin:8px 0;color:#f8fafc}
-.language{display:flex;justify-content:flex-end;margin:10px 0}
-.language select{background:#111827;color:#fff;border:1px solid #475569;border-radius:7px;padding:9px 12px;font-size:16px}
-.actions{display:grid;gap:12px;margin:16px 0}
-.actions button{width:100%;min-height:58px;padding:12px 16px;border:0;border-radius:10px;font-size:18px;font-weight:700;cursor:pointer}
+.admin{position:absolute;right:0;top:0}
+.admin button{background:transparent;border:0;color:#64748b;font-size:15px;padding:3px;cursor:pointer}
+.auth{display:none;background:#111827;border:1px solid #334155;border-radius:8px;padding:10px;margin-bottom:12px}
+.auth input{display:block;width:100%;padding:9px;margin:4px 0;background:#0f172a;color:#fff;border:1px solid #475569;border-radius:6px}
+.auth button{padding:8px 12px;border:0;border-radius:6px;background:#2563eb;color:#fff;cursor:pointer}
+.language{display:flex;justify-content:flex-end;margin:6px 0 10px}
+.language select{background:#111827;color:#fff;border:1px solid #475569;border-radius:7px;padding:8px 11px;font-size:15px}
+.card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:17px;margin:10px 0}
+.card h2{font-size:22px;margin:0 0 10px}
+.card h3{font-size:18px;margin:16px 0 6px}
+.card p{font-size:17px;line-height:1.6;margin:7px 0;color:#f8fafc}
+.actions{display:grid;gap:9px;margin:12px 0}
+.actions button{width:100%;min-height:54px;padding:10px 14px;border:0;border-radius:9px;font-size:17px;font-weight:700;cursor:pointer}
 .sample{background:#2563eb;color:#fff}
 .full{background:#16a34a;color:#fff}
 .voice{background:#475569;color:#fff}
+.home{background:#7c3aed;color:#fff}
 .actions button:disabled{opacity:.55;cursor:not-allowed}
-.price{text-align:center;font-size:27px;font-weight:700;margin:8px 0}
+.price{text-align:center;font-size:26px;font-weight:700;margin:4px 0}
 .small{text-align:center;color:#cbd5e1;font-size:14px;line-height:1.5}
-.output{display:none;background:#020617;border:1px solid #475569;border-radius:10px;padding:18px;margin-top:15px}
-.output p{font-size:19px;line-height:1.8;margin:0 0 22px}
+.status{font-size:15px;line-height:1.45;color:#bfdbfe;margin-top:8px;min-height:20px}
+.output{display:none;background:#020617;border:1px solid #475569;border-radius:9px;padding:17px;margin-top:10px}
+.output p{font-size:19px;line-height:1.8;margin:0 0 22px;color:#fff}
 .output p:last-child{margin-bottom:0}
-.status{font-size:16px;line-height:1.5;color:#bfdbfe;margin-top:10px}
-.legal{font-size:13px;line-height:1.55;color:#94a3b8;text-align:center;margin-top:24px}
-.hidden{display:none!important}
+.legal{font-size:13px;line-height:1.5;color:#94a3b8;text-align:center;margin:18px 0 0}
 @media(max-width:600px){
-.container{width:94%;padding-top:10px}
-.card{padding:16px}
+.container{width:94%;padding-top:8px}
+.card{padding:14px}
 .card p{font-size:16px}
-.actions button{font-size:17px}
+.actions button{font-size:16px}
 .output p{font-size:18px}
 }
 </style>
@@ -50,50 +50,45 @@ h1{font-size:clamp(28px,6vw,46px);margin:4px 0 8px;letter-spacing:.5px}
 <body>
 <div class="container">
 <header>
-<div class="admin">
-<button onclick="toggleAuthBox()" aria-label="Administración">⚙</button>
-</div>
+<div class="admin"><button type="button" onclick="toggleAuthBox()" aria-label="Administración">⚙</button></div>
 <h1>AL CIELO</h1>
-<p class="subtitle" id="subtitle">Bienestar y Movilidad Universal para adultos 50+</p>
+<p class="subtitle" id="subtitle"></p>
 </header>
 
 <div id="authBox" class="auth">
-<input id="adminUser" type="text" autocomplete="username" placeholder="Usuario">
-<input id="adminPass" type="password" autocomplete="current-password" placeholder="Contraseña">
-<button onclick="realizarAccesoCortesia()">Acceso de cortesía</button>
+<input id="adminUser" type="text" autocomplete="username">
+<input id="adminPass" type="password" autocomplete="current-password">
+<button id="courtesyBtn" type="button" onclick="realizarAccesoCortesia()"></button>
 <div id="authStatus" class="status"></div>
 </div>
 
 <div class="language">
-<select id="language" onchange="cambiarIdiomaPantalla()">
+<select id="language" onchange="cambiarIdiomaPantalla()" aria-label="Idioma">
 <option value="es">Español</option>
 <option value="en">English</option>
 <option value="pt">Português</option>
 </select>
 </div>
 
-<section class="card">
-<h2 id="infoTitle">¿Qué es y para qué sirve AL CIELO?</h2>
-<p id="infoText">AL CIELO es un espacio sencillo de bienestar pensado especialmente para personas de 50 años o más. Puede utilizarse sentado, descansando, acostado o con movilidad limitada. La intención es acompañarle durante unos minutos con instrucciones claras, tranquilas y fáciles de seguir.</p>
-
-<h3 id="serviceTitle">¿Qué contiene el servicio diario de bienestar?</h3>
-<p id="serviceText">Cada sesión ofrece una experiencia guiada de bienestar que puede realizar a su propio ritmo. No necesita conocimientos técnicos y no necesita estar de pie para participar.</p>
-
-<h3 id="phase1Title">Fase 1</h3>
-<p id="phase1">Comenzamos con una bienvenida y una indicación sencilla para prepararse.</p>
-
-<h3 id="phase2Title">Fase 2</h3>
-<p id="phase2">Continuamos con una rutina guiada de bienestar y movilidad adaptada a la situación de cada persona.</p>
-
-<h3 id="phase3Title">Fase 3</h3>
-<p id="phase3">Terminamos con unos momentos tranquilos para cerrar la sesión y continuar con el día.</p>
+<section class="card" id="informationCard">
+<h2 id="infoTitle"></h2>
+<p id="infoText"></p>
+<h3 id="phase1Title"></h3>
+<p id="phase1"></p>
+<h3 id="phase2Title"></h3>
+<p id="phase2"></p>
+<h3 id="phase3Title"></h3>
+<p id="phase3"></p>
+<h3 id="serviceTitle"></h3>
+<p id="serviceText"></p>
 </section>
 
 <section class="card">
 <div class="actions">
-<button class="sample" id="sampleBtn" onclick="obtenerContenido(true)">▶️ Ver y Escuchar Muestra Gratuita</button>
-<button class="full" id="fullBtn" onclick="obtenerContenido(false)">🔊 Iniciar Sesión Completa de Bienestar</button>
-<button class="voice" id="voiceBtn" onclick="reproducirVozHumana()">🗣️ Volver a escuchar en voz alta</button>
+<button class="sample" id="sampleBtn" type="button" onclick="obtenerContenido(true)"></button>
+<button class="full" id="fullBtn" type="button" onclick="obtenerContenido(false)"></button>
+<button class="voice" id="voiceBtn" type="button" onclick="reproducirVozHumana()"></button>
+<button class="home" id="homeBtn" type="button" onclick="volverAlInicio()"></button>
 </div>
 <div id="status" class="status"></div>
 <div id="output" class="output"></div>
@@ -101,19 +96,20 @@ h1{font-size:clamp(28px,6vw,46px);margin:4px 0 8px;letter-spacing:.5px}
 
 <section class="card">
 <div class="price">$15.99 / mes</div>
-<p class="small" id="priceText">Acceso completo al servicio de bienestar. El pago se procesa de forma segura mediante Stripe.</p>
+<p class="small" id="priceText"></p>
 <div class="actions">
-<button class="full" id="payBtn" onclick="iniciarPagoStripe()">🔐 Activar acceso completo</button>
+<button class="full" id="payBtn" type="button" onclick="iniciarPagoStripe()"></button>
 </div>
 </section>
 
-<p class="legal" id="legal">
-AL CIELO es un servicio de bienestar y acompañamiento general. No es un servicio médico, no realiza diagnósticos, no sustituye atención profesional y no debe utilizarse para tratar una enfermedad o condición médica.
-</p>
+<p class="legal" id="legal"></p>
 </div>
 
 <script>
 const BASE_URL="https://al-cielo.onrender.com";
+const DEVICE_KEY="al_cielo_device_id";
+const LANGUAGE_KEY="al_cielo_language";
+const ESPERA_ENTRE_PARRAFOS=8000;
 let ultimoTextoGenerado="";
 let dispositivo="";
 let idiomaActual="es";
@@ -121,98 +117,186 @@ let vozActiva=false;
 let vozCancelada=false;
 let parrafosVoz=[];
 let indiceVoz=0;
-const ESPERA_ENTRE_PARRAFOS=8000;
 
 const T={
 es:{
 subtitle:"Bienestar y Movilidad Universal para adultos 50+",
 infoTitle:"¿Qué es y para qué sirve AL CIELO?",
 infoText:"AL CIELO es un espacio sencillo de bienestar pensado especialmente para personas de 50 años o más. Puede utilizarse sentado, descansando, acostado o con movilidad limitada. La intención es acompañarle durante unos minutos con instrucciones claras, tranquilas y fáciles de seguir.",
-serviceTitle:"¿Qué contiene el servicio diario de bienestar?",
-serviceText:"Cada sesión ofrece una experiencia guiada de bienestar que puede realizar a su propio ritmo. No necesita conocimientos técnicos y no necesita estar de pie para participar.",
 phase1Title:"Fase 1",
 phase1:"Comenzamos con una bienvenida y una indicación sencilla para prepararse.",
 phase2Title:"Fase 2",
 phase2:"Continuamos con una rutina guiada de bienestar y movilidad adaptada a la situación de cada persona.",
 phase3Title:"Fase 3",
 phase3:"Terminamos con unos momentos tranquilos para cerrar la sesión y continuar con el día.",
+serviceTitle:"¿Qué contiene el servicio diario de bienestar?",
+serviceText:"Cada sesión ofrece una experiencia guiada de bienestar que puede realizar a su propio ritmo. No necesita conocimientos técnicos y no necesita estar de pie para participar.",
 sample:"▶️ Ver y Escuchar Muestra Gratuita",
 full:"🔊 Iniciar Sesión Completa de Bienestar",
 voice:"🗣️ Volver a escuchar en voz alta",
+home:"⌂ Volver al inicio",
 priceText:"Acceso completo al servicio de bienestar. El pago se procesa de forma segura mediante Stripe.",
 pay:"🔐 Activar acceso completo",
-legal:"AL CIELO es un servicio de bienestar y acompañamiento general. No es un servicio médico, no realiza diagnósticos, no sustituye atención profesional y no debe utilizarse para tratar una enfermedad o condición médica."
+legal:"AL CIELO es un servicio de bienestar y acompañamiento general. No es un servicio médico, no realiza diagnósticos, no sustituye atención profesional y no debe utilizarse para tratar una enfermedad o condición médica.",
+user:"Usuario",
+password:"Contraseña",
+courtesy:"Acceso de cortesía",
+ready:"Listo.",
+sampleReady:"Muestra gratuita lista.",
+sessionReady:"Sesión completa de bienestar lista.",
+paymentPreparing:"Preparando pago seguro...",
+paymentReceived:"Pago recibido. Confirmando acceso...",
+paymentConfirmed:"Pago recibido. El acceso está siendo confirmado.",
+paymentWait:"Pago recibido. Espere un momento mientras se confirma el acceso.",
+sessionError:"No fue posible generar la sesión.",
+accessError:"No fue posible activar el acceso.",
+cleared:"La sesión actual fue limpiada. Sus respaldos y datos del dispositivo se mantienen.",
+noContent:"No hay contenido para reproducir.",
+adminActivated:"Acceso de cortesía activado."
 },
 en:{
 subtitle:"Universal Wellness and Mobility for adults 50+",
 infoTitle:"What is AL CIELO and what is it for?",
 infoText:"AL CIELO is a simple wellness space specially designed for people age 50 and older. It can be used while seated, resting, lying down, or with limited mobility. The purpose is to accompany you for a few minutes with clear, calm, easy-to-follow instructions.",
-serviceTitle:"What does the daily wellness service include?",
-serviceText:"Each session offers a guided wellness experience that you can follow at your own pace. You do not need technical knowledge and you do not need to stand to participate.",
 phase1Title:"Phase 1",
 phase1:"We begin with a welcome and a simple instruction to help you get ready.",
 phase2Title:"Phase 2",
 phase2:"We continue with a guided wellness and mobility routine adapted to each person's situation.",
 phase3Title:"Phase 3",
 phase3:"We finish with a few quiet moments to close the session and continue with your day.",
+serviceTitle:"What does the daily wellness service include?",
+serviceText:"Each session offers a guided wellness experience that you can follow at your own pace. You do not need technical knowledge and you do not need to stand to participate.",
 sample:"▶️ View and Listen to Free Sample",
 full:"🔊 Start Full Wellness Session",
 voice:"🗣️ Listen Again Out Loud",
+home:"⌂ Return to Start",
 priceText:"Full access to the wellness service. Payment is securely processed through Stripe.",
 pay:"🔐 Activate Full Access",
-legal:"AL CIELO is a general wellness and support service. It is not a medical service, does not provide diagnoses, does not replace professional care, and should not be used to treat a disease or medical condition."
+legal:"AL CIELO is a general wellness and support service. It is not a medical service, does not provide diagnoses, does not replace professional care, and should not be used to treat a disease or medical condition.",
+user:"Username",
+password:"Password",
+courtesy:"Courtesy Access",
+ready:"Ready.",
+sampleReady:"Free sample ready.",
+sessionReady:"Full wellness session ready.",
+paymentPreparing:"Preparing secure payment...",
+paymentReceived:"Payment received. Confirming access...",
+paymentConfirmed:"Payment received. Access is being confirmed.",
+paymentWait:"Payment received. Please wait while access is confirmed.",
+sessionError:"The session could not be generated.",
+accessError:"Access could not be activated.",
+cleared:"The current session was cleared. Your backups and device data remain محفوظ.",
+noContent:"There is no content to play.",
+adminActivated:"Courtesy access activated."
 },
 pt:{
 subtitle:"Bem-estar e Mobilidade Universal para adultos 50+",
 infoTitle:"O que é o AL CIELO e para que serve?",
 infoText:"AL CIELO é um espaço simples de bem-estar pensado especialmente para pessoas com 50 anos ou mais. Pode ser utilizado sentado, descansando, deitado ou com mobilidade limitada. A intenção é acompanhar você durante alguns minutos com instruções claras, tranquilas e fáceis de seguir.",
-serviceTitle:"O que contém o serviço diário de bem-estar?",
-serviceText:"Cada sessão oferece uma experiência guiada de bem-estar que você pode realizar no seu próprio ritmo. Você não precisa de conhecimentos técnicos e não precisa ficar em pé para participar.",
 phase1Title:"Fase 1",
 phase1:"Começamos com uma recepção e uma indicação simples para você se preparar.",
 phase2Title:"Fase 2",
 phase2:"Continuamos com uma rotina guiada de bem-estar e mobilidade adaptada à situação de cada pessoa.",
 phase3Title:"Fase 3",
 phase3:"Terminamos com alguns momentos tranquilos para encerrar a sessão e continuar o seu dia.",
+serviceTitle:"O que contém o serviço diário de bem-estar?",
+serviceText:"Cada sessão oferece uma experiência guiada de bem-estar que você pode realizar no seu próprio ritmo. Você não precisa de conhecimentos técnicos e não precisa ficar em pé para participar.",
 sample:"▶️ Ver e Ouvir Amostra Gratuita",
 full:"🔊 Iniciar Sessão Completa de Bem-Estar",
 voice:"🗣️ Ouvir Novamente em Voz Alta",
+home:"⌂ Voltar ao início",
 priceText:"Acesso completo ao serviço de bem-estar. O pagamento é processado com segurança pelo Stripe.",
 pay:"🔐 Ativar Acesso Completo",
-legal:"AL CIELO é um serviço geral de bem-estar e acompanhamento. Não é um serviço médico, não realiza diagnósticos, não substitui atendimento profissional e não deve ser utilizado para tratar uma doença ou condição médica."
+legal:"AL CIELO é um serviço geral de bem-estar e acompanhamento. Não é um serviço médico, não realiza diagnósticos, não substitui atendimento profissional e não deve ser utilizado para tratar uma doença ou condição médica.",
+user:"Usuário",
+password:"Senha",
+courtesy:"Acesso de cortesia",
+ready:"Pronto.",
+sampleReady:"Amostra gratuita pronta.",
+sessionReady:"Sessão completa de bem-estar pronta.",
+paymentPreparing:"Preparando pagamento seguro...",
+paymentReceived:"Pagamento recebido. Confirmando acesso...",
+paymentConfirmed:"Pagamento recebido. O acesso está sendo confirmado.",
+paymentWait:"Pagamento recebido. Aguarde enquanto o acesso é confirmado.",
+sessionError:"Não foi possível gerar a sessão.",
+accessError:"Não foi possível ativar o acesso.",
+cleared:"A sessão atual foi limpa. Seus backups e dados do dispositivo foram mantidos.",
+noContent:"Não há conteúdo para reproduzir.",
+adminActivated:"Acesso de cortesia ativado."
 }
 };
 
+function t(key){
+return (T[idiomaActual]&&T[idiomaActual][key])||T.es[key]||key;
+}
+
 function getDeviceId(){
-let id=localStorage.getItem("al_cielo_device_id");
+let id=localStorage.getItem(DEVICE_KEY);
 if(!id){
-id=(crypto&&crypto.randomUUID)?crypto.randomUUID():"alcielo-"+Date.now()+"-"+Math.random().toString(36).slice(2);
-localStorage.setItem("al_cielo_device_id",id);
+id=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():"alcielo-"+Date.now()+"-"+Math.random().toString(36).slice(2);
+localStorage.setItem(DEVICE_KEY,id);
 }
 dispositivo=id;
 return id;
 }
 
-function toggleAuthBox(){
-const box=document.getElementById("authBox");
-box.style.display=box.style.display==="block"?"none":"block";
+function cargarIdioma(){
+const guardado=localStorage.getItem(LANGUAGE_KEY);
+idiomaActual=(guardado==="en"||guardado==="pt"||guardado==="es")?guardado:"es";
+document.getElementById("language").value=idiomaActual;
+aplicarIdioma();
 }
 
 function cambiarIdiomaPantalla(){
-idiomaActual=document.getElementById("language").value;
-document.documentElement.lang=idiomaActual;
-const t=T[idiomaActual]||T.es;
-Object.keys(t).forEach(k=>{
-const el=document.getElementById(k);
-if(el)el.textContent=t[k];
-});
+const nuevo=document.getElementById("language").value;
+if(nuevo!=="es"&&nuevo!=="en"&&nuevo!=="pt")return;
+idiomaActual=nuevo;
+localStorage.setItem(LANGUAGE_KEY,idiomaActual);
 window.speechSynthesis.cancel();
 vozActiva=false;
+vozCancelada=true;
 parrafosVoz=[];
 indiceVoz=0;
-ultimoTextoGenerado="";
-document.getElementById("output").style.display="none";
-document.getElementById("status").textContent="";
+aplicarIdioma();
+}
+
+function aplicarIdioma(){
+document.documentElement.lang=idiomaActual;
+document.getElementById("language").value=idiomaActual;
+const mapa={
+subtitle:"subtitle",
+infoTitle:"infoTitle",
+infoText:"infoText",
+phase1Title:"phase1Title",
+phase1:"phase1",
+phase2Title:"phase2Title",
+phase2:"phase2",
+phase3Title:"phase3Title",
+phase3:"phase3",
+serviceTitle:"serviceTitle",
+serviceText:"serviceText",
+sample:"sampleBtn",
+full:"fullBtn",
+voice:"voiceBtn",
+home:"homeBtn",
+priceText:"priceText",
+pay:"payBtn",
+legal:"legal",
+courtesy:"courtesyBtn",
+user:"adminUser",
+password:"adminPass"
+};
+Object.keys(mapa).forEach(k=>{
+const el=document.getElementById(mapa[k]);
+if(!el)return;
+if(el.tagName==="INPUT")el.placeholder=t(k);
+else el.textContent=t(k);
+});
+}
+
+function toggleAuthBox(){
+const box=document.getElementById("authBox");
+box.style.display=box.style.display==="block"?"none":"block";
 }
 
 async function realizarAccesoCortesia(){
@@ -227,73 +311,56 @@ headers:{"Content-Type":"application/json"},
 body:JSON.stringify({username,password,device_id:getDeviceId()})
 });
 const data=await r.json();
-if(!r.ok)throw new Error(data.detail||"Access error");
-status.textContent=idiomaActual==="en"?"Courtesy access activated.":idiomaActual==="pt"?"Acesso de cortesia ativado.":"Acceso de cortesía activado.";
+if(!r.ok)throw new Error(data.detail||t("accessError"));
+status.textContent=t("adminActivated");
+document.getElementById("adminPass").value="";
 }catch(e){
-status.textContent=e.message;
+status.textContent=e.message||t("accessError");
 }
 }
 
 function limpiarTextoParaVoz(texto){
-return String(texto||"")
-.replace(/\r/g,"")
-.replace(/\n{3,}/g,"\n\n")
-.trim();
+return String(texto||"").replace(/\r/g,"").replace(/\n{3,}/g,"\n\n").trim();
 }
 
 function separarParrafos(texto){
-return limpiarTextoParaVoz(texto)
-.split(/\n\s*\n/)
-.map(x=>x.trim())
-.filter(x=>x.length>0);
+return limpiarTextoParaVoz(texto).split(/\n\s*\n/).map(x=>x.trim()).filter(Boolean);
 }
 
 function mostrarContenido(texto){
 const output=document.getElementById("output");
 output.innerHTML="";
 const parrafos=separarParrafos(texto);
-if(!parrafos.length){
-output.textContent=texto||"";
-}else{
 parrafos.forEach(p=>{
 const el=document.createElement("p");
 el.textContent=p;
 output.appendChild(el);
 });
-}
-output.style.display="block";
+output.style.display=parrafos.length?"block":"none";
 }
 
 async function obtenerContenido(isHook){
 const status=document.getElementById("status");
-const output=document.getElementById("output");
 const btn=isHook?document.getElementById("sampleBtn"):document.getElementById("fullBtn");
-status.textContent="";
 btn.disabled=true;
+status.textContent="";
 window.speechSynthesis.cancel();
 vozActiva=false;
-parrafosVoz=[];
-indiceVoz=0;
+vozCancelada=true;
 try{
 const r=await fetch("/api/v1/generate-session",{
 method:"POST",
 headers:{"Content-Type":"application/json"},
-body:JSON.stringify({
-device_id:getDeviceId(),
-language:idiomaActual,
-is_hook:!!isHook
-})
+body:JSON.stringify({device_id:getDeviceId(),language:idiomaActual,is_hook:!!isHook})
 });
 const data=await r.json();
-if(!r.ok)throw new Error(data.detail||"No fue posible generar la sesión.");
+if(!r.ok)throw new Error(data.detail||t("sessionError"));
 ultimoTextoGenerado=limpiarTextoParaVoz(data.session_content||"");
 mostrarContenido(ultimoTextoGenerado);
-status.textContent=isHook
-?(idiomaActual==="en"?"Free sample ready.":idiomaActual==="pt"?"Amostra gratuita pronta.":"Muestra gratuita lista.")
-:(idiomaActual==="en"?"Full wellness session ready.":idiomaActual==="pt"?"Sessão completa de bem-estar pronta.":"Sesión completa de bienestar lista.");
+status.textContent=isHook?t("sampleReady"):t("sessionReady");
 if(ultimoTextoGenerado)iniciarVozPorParrafos();
 }catch(e){
-status.textContent=e.message;
+status.textContent=e.message||t("sessionError");
 }finally{
 btn.disabled=false;
 }
@@ -318,18 +385,18 @@ return;
 const texto=parrafosVoz[indiceVoz++];
 const u=new SpeechSynthesisUtterance(texto);
 u.lang=idiomaActual==="es"?"es-ES":idiomaActual==="en"?"en-US":"pt-BR";
-const v=seleccionarVoz(idiomaActual);
-if(v)u.voice=v;
+const voz=seleccionarVoz(idiomaActual);
+if(voz)u.voice=voz;
 u.rate=.92;
 u.pitch=1;
 u.volume=1;
 u.onend=()=>{
 if(!vozActiva||vozCancelada)return;
-setTimeout(()=>hablarSiguienteParrafo(),ESPERA_ENTRE_PARRAFOS);
+setTimeout(hablarSiguienteParrafo,ESPERA_ENTRE_PARRAFOS);
 };
 u.onerror=()=>{
 if(!vozActiva||vozCancelada)return;
-setTimeout(()=>hablarSiguienteParrafo(),ESPERA_ENTRE_PARRAFOS);
+setTimeout(hablarSiguienteParrafo,ESPERA_ENTRE_PARRAFOS);
 };
 window.speechSynthesis.speak(u);
 }
@@ -345,7 +412,10 @@ hablarSiguienteParrafo();
 }
 
 function reproducirVozHumana(){
-if(!ultimoTextoGenerado)return;
+if(!ultimoTextoGenerado){
+document.getElementById("status").textContent=t("noContent");
+return;
+}
 if(window.speechSynthesis.speaking||vozActiva){
 window.speechSynthesis.cancel();
 vozActiva=false;
@@ -355,11 +425,35 @@ return;
 iniciarVozPorParrafos();
 }
 
+function limpiarPantallaSesion(){
+window.speechSynthesis.cancel();
+vozActiva=false;
+vozCancelada=true;
+parrafosVoz=[];
+indiceVoz=0;
+ultimoTextoGenerado="";
+document.getElementById("output").innerHTML="";
+document.getElementById("output").style.display="none";
+document.getElementById("status").textContent="";
+document.getElementById("authStatus").textContent="";
+document.getElementById("adminUser").value="";
+document.getElementById("adminPass").value="";
+document.getElementById("authBox").style.display="none";
+}
+
+function volverAlInicio(){
+limpiarPantallaSesion();
+document.getElementById("language").value=idiomaActual;
+aplicarIdioma();
+window.scrollTo({top:0,behavior:"smooth"});
+document.getElementById("informationCard").scrollIntoView({behavior:"smooth",block:"start"});
+}
+
 async function iniciarPagoStripe(){
 const status=document.getElementById("status");
 const btn=document.getElementById("payBtn");
 btn.disabled=true;
-status.textContent=idiomaActual==="en"?"Preparing secure payment...":idiomaActual==="pt"?"Preparando pagamento seguro...":"Preparando pago seguro...";
+status.textContent=t("paymentPreparing");
 try{
 const r=await fetch("/api/v1/create-checkout-session",{
 method:"POST",
@@ -367,11 +461,11 @@ headers:{"Content-Type":"application/json"},
 body:JSON.stringify({device_id:getDeviceId()})
 });
 const data=await r.json();
-if(!r.ok)throw new Error(data.detail||"No fue posible iniciar el pago.");
-if(data.checkout_url)window.location.href=data.checkout_url;
-else throw new Error("Stripe no devolvió una dirección de pago.");
+if(!r.ok)throw new Error(data.detail||t("accessError"));
+if(!data.checkout_url)throw new Error(t("accessError"));
+window.location.href=data.checkout_url;
 }catch(e){
-status.textContent=e.message;
+status.textContent=e.message||t("accessError");
 btn.disabled=false;
 }
 }
@@ -382,7 +476,7 @@ const sessionId=params.get("session_id");
 const deviceId=params.get("device_id")||getDeviceId();
 if(!sessionId)return;
 const status=document.getElementById("status");
-status.textContent=idiomaActual==="en"?"Payment received. Confirming access...":idiomaActual==="pt"?"Pagamento recebido. Confirmando acesso...":"Pago recibido. Confirmando acceso...";
+status.textContent=t("paymentReceived");
 let intentos=0;
 const revisar=async()=>{
 try{
@@ -395,9 +489,10 @@ return;
 }
 }catch(e){}
 intentos++;
-if(intentos<20)setTimeout(revisar,1000);
-else{
-status.textContent=idiomaActual==="en"?"Payment received. Please start your full session.":idiomaActual==="pt"?"Pagamento recebido. Inicie sua sessão completa.":"Pago recibido. Inicie su sesión completa.";
+if(intentos<30){
+setTimeout(revisar,1000);
+}else{
+status.textContent=t("paymentWait");
 window.history.replaceState({},document.title,"/");
 }
 };
@@ -408,7 +503,7 @@ window.speechSynthesis.onvoiceschanged=()=>{};
 
 document.addEventListener("DOMContentLoaded",()=>{
 getDeviceId();
-cambiarIdiomaPantalla();
+cargarIdioma();
 comprobarRegresoDeStripe();
 });
 </script>
