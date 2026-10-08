@@ -1,888 +1,368 @@
-import os,re,json,time,sqlite3,asyncio
+import os
+import sqlite3
+import random
+import asyncio
 from pathlib import Path
-from typing import Optional
-import stripe
-from fastapi import FastAPI,Request
+from fastapi import FastAPI, HTTPException, Request, Header
+from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse,FileResponse,JSONResponse
+import stripe
+from google import genai
+from google.genai import types
+import openai
 
-APP_VERSION="4.4.0"
+app=FastAPI(title="AL CIELO - Production Engine",version="3.9.2")
+app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_credentials=True,allow_methods=["*"],allow_headers=["*"])
+
+stripe.api_key=os.getenv("STRIPE_SECRET_KEY")
+STRIPE_PRICE_ID=os.getenv("STRIPE_PRICE_ID")
+STRIPE_WEBHOOK_SECRET=os.getenv("STRIPE_WEBHOOK_SECRET")
+ADMIN_USER=os.getenv("ADMIN_USER") or os.getenv("ADMIN_USERNAME")
+ADMIN_PASS=os.getenv("ADMIN_PASS") or os.getenv("ADMIN_PASSWORD")
+DB_FILE="alcielo_licences.db"
 BASE_URL="https://al-cielo.onrender.com"
-DB_PATH=Path("alcielo_licences.db")
-INDEX_PATH=Path("index.html")
+INDEX_FILE=Path("index.html")
 
-STRIPE_SECRET_KEY=os.getenv("STRIPE_SECRET_KEY","").strip()
-STRIPE_PRICE_ID=os.getenv("STRIPE_PRICE_ID","").strip()
-STRIPE_WEBHOOK_SECRET=os.getenv("STRIPE_WEBHOOK_SECRET","").strip()
-ADMIN_USER=os.getenv("ADMIN_USER",os.getenv("ADMIN_USERNAME","")).strip()
-ADMIN_PASS=os.getenv("ADMIN_PASS",os.getenv("ADMIN_PASSWORD","")).strip()
-GEMINI_API_KEY=os.getenv("GEMINI_API_KEY","").strip()
-OPENAI_API_KEY=os.getenv("OPENAI_API_KEY","").strip()
-GEMINI_MODEL=os.getenv("GEMINI_MODEL","gemini-2.5-flash").strip()
-OPENAI_MODEL=os.getenv("OPENAI_MODEL","gpt-4o-mini").strip()
+try:
+    gemini_client=genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+except Exception:
+    gemini_client=None
 
-if STRIPE_SECRET_KEY:
-    stripe.api_key=STRIPE_SECRET_KEY
+openai_api_key=os.getenv("OPENAI_API_KEY")
+openai_client=openai.OpenAI(api_key=openai_api_key) if openai_api_key else None
 
-app=FastAPI(title="AL CIELO",version=APP_VERSION)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"]
-)
-
-def db():
-    c=sqlite3.connect(DB_PATH)
-    c.row_factory=sqlite3.Row
-    return c
+def get_db():
+    conn=sqlite3.connect(DB_FILE)
+    conn.row_factory=sqlite3.Row
+    return conn
 
 def init_db():
-    c=db()
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS authorized_devices(
+    conn=get_db()
+    conn.execute("""CREATE TABLE IF NOT EXISTS authorized_devices(
         device_id TEXT PRIMARY KEY,
         status TEXT NOT NULL DEFAULT 'active',
         stripe_customer_id TEXT,
         stripe_subscription_id TEXT,
-        updated_at REAL NOT NULL
-    )
-    """)
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS fallback_rotation(
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS fallback_rotation(
         device_id TEXT NOT NULL,
         language TEXT NOT NULL,
         position INTEGER NOT NULL DEFAULT 0,
-        updated_at REAL NOT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY(device_id,language)
-    )
-    """)
-    c.commit()
-    c.close()
+    )""")
+    conn.commit()
+    conn.close()
 
-init_db()
-
-def authorized(device_id):
-    if not device_id:
-        return False
-    c=db()
-    r=c.execute(
-        "SELECT status FROM authorized_devices WHERE device_id=?",
-        (device_id,)
-    ).fetchone()
-    c.close()
-    return bool(r and r["status"]=="active")
-
-def authorize_device(device_id,customer=None,subscription=None):
+def authorize_device(device_id,customer_id=None,subscription_id=None):
     if not device_id:
         return
-    c=db()
-    c.execute("""
-    INSERT INTO authorized_devices
-    (device_id,status,stripe_customer_id,stripe_subscription_id,updated_at)
-    VALUES(?,?,?,?,?)
-    ON CONFLICT(device_id) DO UPDATE SET
+    conn=get_db()
+    conn.execute("""INSERT INTO authorized_devices
+        (device_id,status,stripe_customer_id,stripe_subscription_id,updated_at)
+        VALUES(?,'active',?,?,CURRENT_TIMESTAMP)
+        ON CONFLICT(device_id) DO UPDATE SET
         status='active',
         stripe_customer_id=excluded.stripe_customer_id,
         stripe_subscription_id=excluded.stripe_subscription_id,
-        updated_at=excluded.updated_at
-    """,(device_id,"active",customer,subscription,time.time()))
-    c.commit()
-    c.close()
+        updated_at=CURRENT_TIMESTAMP""",(device_id,customer_id,subscription_id))
+    conn.commit()
+    conn.close()
 
-def deactivate_subscription(subscription_id):
+def check_device_authorization(device_id):
+    if not device_id:
+        return False
+    conn=get_db()
+    row=conn.execute("SELECT status FROM authorized_devices WHERE device_id=?",(device_id,)).fetchone()
+    conn.close()
+    return bool(row and row["status"]=="active")
+
+def deactivate_device_by_subscription(subscription_id):
     if not subscription_id:
         return
-    c=db()
-    c.execute("""
-    UPDATE authorized_devices
-    SET status='inactive',updated_at=?
-    WHERE stripe_subscription_id=?
-    """,(time.time(),subscription_id))
-    c.commit()
-    c.close()
+    conn=get_db()
+    conn.execute("UPDATE authorized_devices SET status='inactive',updated_at=CURRENT_TIMESTAMP WHERE stripe_subscription_id=?",(subscription_id,))
+    conn.commit()
+    conn.close()
 
 def next_backup(device_id,language):
-    language=language if language in ("es","en","pt") else "es"
-    c=db()
-    r=c.execute("""
-    SELECT position FROM fallback_rotation
-    WHERE device_id=? AND language=?
-    """,(device_id,language)).fetchone()
-    if r is None:
+    conn=get_db()
+    row=conn.execute("SELECT position FROM fallback_rotation WHERE device_id=? AND language=?",(device_id,language)).fetchone()
+    if row is None:
         position=0
-        c.execute("""
-        INSERT INTO fallback_rotation
-        (device_id,language,position,updated_at)
-        VALUES(?,?,?,?)
-        """,(device_id,language,0,time.time()))
+        conn.execute("INSERT INTO fallback_rotation(device_id,language,position) VALUES(?,?,?)",(device_id,language,1))
     else:
-        position=(int(r["position"])+1)%20
-        c.execute("""
-        UPDATE fallback_rotation
-        SET position=?,updated_at=?
-        WHERE device_id=? AND language=?
-        """,(position,time.time(),device_id,language))
-    c.commit()
-    c.close()
+        position=int(row["position"])%20
+        conn.execute("UPDATE fallback_rotation SET position=?,updated_at=CURRENT_TIMESTAMP WHERE device_id=? AND language=?",(position+1,device_id,language))
+    conn.commit()
+    conn.close()
     return position
 
-def E(es,en,pt):
-    return {"es":es,"en":en,"pt":pt}
+init_db()
 
-def S(titles,*rows):
-    langs=("es","en","pt")
-    result={}
-    for i,lang in enumerate(langs):
-        result[lang]={
-            "title":titles[i],
-            "exercises":[
-                {
-                    "title":f"Parte {n+1}",
-                    "instruction":row[lang]
-                }
-                for n,row in enumerate(rows)
-            ]
-        }
-    return result
+SYSTEM_WELLNESS_PROMPT="""
+You are the exclusive, professional human-like wellness coach and lifestyle companion for the platform "AL CIELO", designed for adults aged 50 and over, encompassing active individuals, seated, resting, or poststrated in bed, including those with limited mobility or missing limbs.
+Your tone must be warm, direct, calm, compassionate, and conversational.
 
-BACKUPS=[
-S(
-("AL CIELO · RESPIRAR","AL CIELO · BREATHE","AL CIELO · RESPIRAR"),
-E("Siéntate o descansa cómodamente y permite que tu respiración sea tranquila.","Sit or rest comfortably and allow your breathing to become calm.","Sente-se ou descanse confortavelmente e permita que sua respiração fique tranquila."),
-E("Inhala suavemente y después deja salir el aire sin prisa.","Breathe in gently and then let the air out without rushing.","Inspire suavemente e depois solte o ar sem pressa."),
-E("Afloja los hombros mientras continúas respirando a tu propio ritmo.","Relax your shoulders while continuing to breathe at your own pace.","Relaxe os ombros enquanto continua respirando no seu próprio ritmo."),
-E("Observa durante un momento cómo entra y sale el aire.","For a moment, notice the air coming in and going out.","Por um momento, observe o ar entrando e saindo."),
-E("Haz otra respiración cómoda, sin forzarla.","Take another comfortable breath without forcing it.","Faça outra respiração confortável sem forçar."),
-E("Permite que tus manos descansen tranquilamente.","Let your hands rest comfortably.","Deixe suas mãos descansarem confortavelmente."),
-E("Mantén un ritmo tranquilo durante unos segundos.","Keep a calm rhythm for a few seconds.","Mantenha um ritmo tranquilo por alguns segundos."),
-E("Cuando estés listo, continúa con el siguiente paso.","When you are ready, continue to the next step.","Quando estiver pronto, continue para o próximo passo.")
-),
-S(
-("AL CIELO · PAUSA","AL CIELO · PAUSE","AL CIELO · PAUSA"),
-E("Haz una pausa y busca una posición cómoda para permanecer unos momentos.","Pause and find a comfortable position to stay in for a few moments.","Faça uma pausa e encontre uma posição confortável para permanecer por alguns momentos."),
-E("Mira hacia un punto que te resulte agradable.","Look toward a point that feels pleasant to you.","Olhe para um ponto que seja agradável para você."),
-E("Respira de manera natural.","Breathe naturally.","Respire naturalmente."),
-E("Deja que tus hombros permanezcan sueltos.","Let your shoulders remain relaxed.","Deixe seus ombros permanecerem relaxados."),
-E("Descansa las manos donde te resulte cómodo.","Rest your hands wherever comfortable.","Descanse as mãos onde for confortável."),
-E("Permanece así unos segundos.","Stay this way for a few seconds.","Permaneça assim por alguns segundos."),
-E("Haz una respiración tranquila.","Take a calm breath.","Faça uma respiração tranquila."),
-E("Continúa cuando te sientas preparado.","Continue when you feel ready.","Continue quando se sentir preparado.")
-),
-S(
-("AL CIELO · RITMO","AL CIELO · RHYTHM","AL CIELO · RITMO"),
-E("Encuentra un ritmo de respiración que te resulte natural.","Find a breathing rhythm that feels natural to you.","Encontre um ritmo de respiração que seja natural para você."),
-E("Toma aire suavemente.","Breathe in gently.","Inspire suavemente."),
-E("Suelta el aire poco a poco.","Let the air out slowly.","Solte o ar devagar."),
-E("Repite una respiración cómoda.","Repeat a comfortable breath.","Repita uma respiração confortável."),
-E("Mantén tu cuerpo en una posición agradable.","Keep your body in a comfortable position.","Mantenha o corpo em uma posição confortável."),
-E("No necesitas apresurarte.","There is no need to hurry.","Você não precisa se apressar."),
-E("Permanece tranquilo unos segundos.","Stay calm for a few seconds.","Permaneça tranquilo por alguns segundos."),
-E("Continúa a tu propio ritmo.","Continue at your own pace.","Continue no seu próprio ritmo.")
-),
-S(
-("AL CIELO · DESCANSO","AL CIELO · REST","AL CIELO · DESCANSO"),
-E("Permite que este momento sea simplemente un momento de descanso.","Allow this moment to simply be a moment of rest.","Permita que este momento seja simplesmente um momento de descanso."),
-E("Coloca tu cuerpo de la forma que te resulte más cómoda.","Place your body in whatever position feels most comfortable.","Coloque o corpo na posição que for mais confortável."),
-E("Respira normalmente.","Breathe normally.","Respire normalmente."),
-E("Deja descansar tus brazos.","Let your arms rest.","Deixe os braços descansarem."),
-E("Suelta cualquier prisa por unos instantes.","Let go of any hurry for a moment.","Deixe a pressa de lado por alguns instantes."),
-E("Observa tu respiración sin cambiarla.","Notice your breathing without changing it.","Observe sua respiração sem mudá-la."),
-E("Permanece cómodo.","Remain comfortable.","Permaneça confortável."),
-E("Continúa cuando quieras.","Continue when you wish.","Continue quando quiser.")
-),
-S(
-("AL CIELO · TRANQUILIDAD","AL CIELO · CALM","AL CIELO · TRANQUILIDADE"),
-E("Busca una postura cómoda y comienza este momento con calma.","Find a comfortable position and begin this moment calmly.","Encontre uma posição confortável e comece este momento com calma."),
-E("Respira suavemente.","Breathe gently.","Respire suavemente."),
-E("Deja salir el aire sin esfuerzo.","Let the air out without effort.","Solte o ar sem esforço."),
-E("Mantén los hombros cómodos.","Keep your shoulders comfortable.","Mantenha os ombros confortáveis."),
-E("Permanece tranquilo unos segundos.","Stay calm for a few seconds.","Permaneça tranquilo por alguns segundos."),
-E("Haz otra respiración natural.","Take another natural breath.","Faça outra respiração natural."),
-E("Descansa un momento.","Rest for a moment.","Descanse por um momento."),
-E("Continúa cuando estés listo.","Continue when you are ready.","Continue quando estiver pronto.")
-),
-S(
-("AL CIELO · PRESENTE","AL CIELO · PRESENT","AL CIELO · PRESENTE"),
-E("Concéntrate solamente en este momento.","Focus only on this moment.","Concentre-se apenas neste momento."),
-E("Siente cómo estás sentado o descansando.","Notice how you are sitting or resting.","Perceba como você está sentado ou descansando."),
-E("Respira con naturalidad.","Breathe naturally.","Respire naturalmente."),
-E("Mira a tu alrededor tranquilamente.","Look around you calmly.","Olhe ao seu redor com tranquilidade."),
-E("Deja que tus manos descansen.","Let your hands rest.","Deixe suas mãos descansarem."),
-E("Permanece aquí unos segundos.","Stay here for a few seconds.","Permaneça aqui por alguns segundos."),
-E("Haz una respiración cómoda.","Take a comfortable breath.","Faça uma respiração confortável."),
-E("Cuando quieras, continúa.","When you wish, continue.","Quando quiser, continue.")
-),
-S(
-("AL CIELO · AIRE","AL CIELO · AIR","AL CIELO · AR"),
-E("Toma aire de forma suave y natural.","Breathe in gently and naturally.","Inspire de forma suave e natural."),
-E("Suelta el aire lentamente.","Breathe out slowly.","Solte o ar lentamente."),
-E("Repite el movimiento sin esfuerzo.","Repeat the movement without effort.","Repita o movimento sem esforço."),
-E("Mantén una posición cómoda.","Keep a comfortable position.","Mantenha uma posição confortável."),
-E("Permite que los hombros descansen.","Let your shoulders rest.","Permita que os ombros descansem."),
-E("Respira a tu propio ritmo.","Breathe at your own pace.","Respire no seu próprio ritmo."),
-E("Haz una pausa breve.","Take a short pause.","Faça uma breve pausa."),
-E("Continúa cuando estés preparado.","Continue when you are ready.","Continue quando estiver preparado.")
-),
-S(
-("AL CIELO · MOMENTO","AL CIELO · MOMENT","AL CIELO · MOMENTO"),
-E("Regálate unos momentos de tranquilidad.","Give yourself a few moments of calm.","Dê a si mesmo alguns momentos de tranquilidade."),
-E("Busca una postura que puedas mantener cómodamente.","Find a position you can maintain comfortably.","Encontre uma posição que possa manter confortavelmente."),
-E("Respira normalmente.","Breathe normally.","Respire normalmente."),
-E("Deja descansar tus manos.","Let your hands rest.","Deixe suas mãos descansarem."),
-E("Mira tranquilamente hacia adelante.","Look calmly ahead.","Olhe tranquilamente para frente."),
-E("Permanece así unos segundos.","Stay this way for a few seconds.","Permaneça assim por alguns segundos."),
-E("Haz una respiración suave.","Take a gentle breath.","Faça uma respiração suave."),
-E("Continúa cuando quieras.","Continue when you wish.","Continue quando quiser.")
-),
-S(
-("AL CIELO · CALMA","AL CIELO · CALM","AL CIELO · CALMA"),
-E("Comienza lentamente y encuentra una posición agradable.","Begin slowly and find a comfortable position.","Comece devagar e encontre uma posição agradável."),
-E("Respira sin cambiar tu ritmo natural.","Breathe without changing your natural rhythm.","Respire sem mudar seu ritmo natural."),
-E("Suelta el aire tranquilamente.","Breathe out calmly.","Solte o ar com tranquilidade."),
-E("Relaja los hombros.","Relax your shoulders.","Relaxe os ombros."),
-E("Permanece cómodo.","Remain comfortable.","Permaneça confortável."),
-E("Haz una respiración más.","Take one more breath.","Faça mais uma respiração."),
-E("Descansa unos segundos.","Rest for a few seconds.","Descanse por alguns segundos."),
-E("Continúa cuando estés listo.","Continue when you are ready.","Continue quando estiver pronto.")
-),
-S(
-("AL CIELO · RESPIRACIÓN","AL CIELO · BREATHING","AL CIELO · RESPIRAÇÃO"),
-E("Permite que tu respiración encuentre su propio ritmo.","Let your breathing find its own rhythm.","Permita que sua respiração encontre seu próprio ritmo."),
-E("Inhala cómodamente.","Breathe in comfortably.","Inspire confortavelmente."),
-E("Exhala sin prisa.","Breathe out without rushing.","Expire sem pressa."),
-E("Mantén el cuerpo descansado.","Keep your body relaxed.","Mantenha o corpo relaxado."),
-E("Observa el aire durante un momento.","Notice the air for a moment.","Observe o ar por um momento."),
-E("Haz otra respiración tranquila.","Take another calm breath.","Faça outra respiração tranquila."),
-E("Permanece unos segundos en calma.","Remain calm for a few seconds.","Permaneça alguns segundos em calma."),
-E("Continúa cuando quieras.","Continue when you wish.","Continue quando quiser.")
-),
-S(
-("AL CIELO · SILENCIO","AL CIELO · SILENCE","AL CIELO · SILÊNCIO"),
-E("Quédate en silencio durante unos instantes.","Stay quiet for a few moments.","Fique em silêncio por alguns instantes."),
-E("Respira normalmente.","Breathe normally.","Respire normalmente."),
-E("Deja descansar los hombros.","Let your shoulders rest.","Deixe os ombros descansarem."),
-E("Mantén las manos cómodas.","Keep your hands comfortable.","Mantenha as mãos confortáveis."),
-E("Mira hacia un punto tranquilo.","Look toward a calm point.","Olhe para um ponto tranquilo."),
-E("Permanece así unos segundos.","Stay this way for a few seconds.","Permaneça assim por alguns segundos."),
-E("Haz una respiración suave.","Take a gentle breath.","Faça uma respiração suave."),
-E("Continúa cuando estés preparado.","Continue when you are ready.","Continue quando estiver preparado.")
-),
-S(
-("AL CIELO · DESPACIO","AL CIELO · SLOWLY","AL CIELO · DEVAGAR"),
-E("Haz todo este momento sin apresurarte.","Take this whole moment without rushing.","Faça todo este momento sem pressa."),
-E("Respira suavemente.","Breathe gently.","Respire suavemente."),
-E("Suelta el aire poco a poco.","Let the air out gradually.","Solte o ar aos poucos."),
-E("Permanece en una postura cómoda.","Remain in a comfortable position.","Permaneça em uma posição confortável."),
-E("Descansa los brazos.","Rest your arms.","Descanse os braços."),
-E("Respira una vez más.","Breathe once more.","Respire mais uma vez."),
-E("Haz una pequeña pausa.","Take a short pause.","Faça uma pequena pausa."),
-E("Continúa cuando quieras.","Continue when you wish.","Continue quando quiser.")
-),
-S(
-("AL CIELO · PAZ","AL CIELO · PEACE","AL CIELO · PAZ"),
-E("Busca un momento de paz y permanece cómodo.","Find a peaceful moment and remain comfortable.","Encontre um momento de paz e permaneça confortável."),
-E("Respira naturalmente.","Breathe naturally.","Respire naturalmente."),
-E("Deja salir el aire suavemente.","Let the air out gently.","Solte o ar suavemente."),
-E("Permite que los hombros descansen.","Let your shoulders rest.","Permita que os ombros descansem."),
-E("Permanece tranquilo.","Remain calm.","Permaneça tranquilo."),
-E("Haz una respiración cómoda.","Take a comfortable breath.","Faça uma respiração confortável."),
-E("Descansa unos segundos.","Rest for a few seconds.","Descanse por alguns segundos."),
-E("Continúa cuando estés listo.","Continue when you are ready.","Continue quando estiver pronto.")
-),
-S(
-("AL CIELO · AHORA","AL CIELO · NOW","AL CIELO · AGORA"),
-E("Permanece atento solamente a este momento.","Stay aware only of this moment.","Permaneça atento apenas a este momento."),
-E("Respira de manera cómoda.","Breathe comfortably.","Respire confortavelmente."),
-E("Suelta el aire lentamente.","Breathe out slowly.","Solte o ar lentamente."),
-E("Mantén una posición agradable.","Keep a comfortable position.","Mantenha uma posição confortável."),
-E("Deja descansar las manos.","Let your hands rest.","Deixe as mãos descansarem."),
-E("Permanece unos segundos.","Stay for a few seconds.","Permaneça por alguns segundos."),
-E("Respira otra vez.","Breathe again.","Respire novamente."),
-E("Continúa cuando quieras.","Continue when you wish.","Continue quando quiser.")
-),
-S(
-("AL CIELO · SUAVE","AL CIELO · GENTLE","AL CIELO · SUAVE"),
-E("Comienza con movimientos y respiración suaves.","Begin with gentle movements and breathing.","Comece com movimentos e respiração suaves."),
-E("Respira sin esfuerzo.","Breathe without effort.","Respire sem esforço."),
-E("Deja salir el aire tranquilamente.","Let the air out calmly.","Solte o ar com tranquilidade."),
-E("Mantén el cuerpo cómodo.","Keep your body comfortable.","Mantenha o corpo confortável."),
-E("Relaja las manos.","Relax your hands.","Relaxe as mãos."),
-E("Haz una respiración natural.","Take a natural breath.","Faça uma respiração natural."),
-E("Descansa unos segundos.","Rest for a few seconds.","Descanse por alguns segundos."),
-E("Continúa cuando estés listo.","Continue when you are ready.","Continue quando estiver pronto.")
-),
-S(
-("AL CIELO · DESCUBRE","AL CIELO · DISCOVER","AL CIELO · DESCUBRA"),
-E("Observa cómo te sientes en este momento de descanso.","Notice how you feel during this moment of rest.","Observe como você se sente neste momento de descanso."),
-E("Respira con tranquilidad.","Breathe calmly.","Respire com tranquilidade."),
-E("Mira a tu alrededor.","Look around you.","Olhe ao seu redor."),
-E("Permanece cómodo.","Remain comfortable.","Permaneça confortável."),
-E("Deja descansar los hombros.","Let your shoulders rest.","Deixe os ombros descansarem."),
-E("Haz una respiración suave.","Take a gentle breath.","Faça uma respiração suave."),
-E("Quédate tranquilo unos segundos.","Stay calm for a few seconds.","Fique tranquilo por alguns segundos."),
-E("Continúa cuando quieras.","Continue when you wish.","Continue quando quiser.")
-),
-S(
-("AL CIELO · LENTO","AL CIELO · SLOW","AL CIELO · LENTO"),
-E("Reduce el ritmo y permanece cómodo.","Slow down and remain comfortable.","Diminua o ritmo e permaneça confortável."),
-E("Respira suavemente.","Breathe gently.","Respire suavemente."),
-E("Suelta el aire lentamente.","Breathe out slowly.","Solte o ar lentamente."),
-E("Descansa los hombros.","Rest your shoulders.","Descanse os ombros."),
-E("Mantén las manos tranquilas.","Keep your hands relaxed.","Mantenha as mãos tranquilas."),
-E("Permanece unos segundos.","Stay for a few seconds.","Permaneça por alguns segundos."),
-E("Respira nuevamente.","Breathe again.","Respire novamente."),
-E("Continúa cuando estés preparado.","Continue when you are ready.","Continue quando estiver preparado.")
-),
-S(
-("AL CIELO · A TU RITMO","AL CIELO · YOUR PACE","AL CIELO · SEU RITMO"),
-E("Haz este momento a tu propio ritmo.","Take this moment at your own pace.","Faça este momento no seu próprio ritmo."),
-E("Busca comodidad.","Find comfort.","Busque conforto."),
-E("Respira naturalmente.","Breathe naturally.","Respire naturalmente."),
-E("Suelta el aire sin prisa.","Breathe out without rushing.","Solte o ar sem pressa."),
-E("Descansa las manos.","Rest your hands.","Descanse as mãos."),
-E("Permanece cómodo.","Remain comfortable.","Permaneça confortável."),
-E("Haz una pausa breve.","Take a short pause.","Faça uma breve pausa."),
-E("Continúa cuando quieras.","Continue when you wish.","Continue quando quiser.")
-),
-S(
-("AL CIELO · MOMENTO TRANQUILO","AL CIELO · QUIET MOMENT","AL CIELO · MOMENTO TRANQUILO"),
-E("Permanece tranquilo y cómodo durante este momento.","Remain calm and comfortable during this moment.","Permaneça tranquilo e confortável durante este momento."),
-E("Respira suavemente.","Breathe gently.","Respire suavemente."),
-E("Deja que el aire salga sin prisa.","Let the air out without rushing.","Deixe o ar sair sem pressa."),
-E("Mantén una postura agradable.","Keep a comfortable posture.","Mantenha uma postura agradável."),
-E("Descansa los brazos.","Rest your arms.","Descanse os braços."),
-E("Observa tu respiración.","Notice your breathing.","Observe sua respiração."),
-E("Permanece unos segundos.","Stay for a few seconds.","Permaneça por alguns segundos."),
-E("Continúa cuando estés listo.","Continue when you are ready.","Continue quando estiver pronto.")
-),
-S(
-("AL CIELO · FINAL","AL CIELO · FINISH","AL CIELO · FINAL"),
-E("Comienza este momento con una respiración tranquila.","Begin this moment with a calm breath.","Comece este momento com uma respiração tranquila."),
-E("Respira cómodamente.","Breathe comfortably.","Respire confortavelmente."),
-E("Suelta el aire suavemente.","Breathe out gently.","Solte o ar suavemente."),
-E("Mantén los hombros cómodos.","Keep your shoulders comfortable.","Mantenha os ombros confortáveis."),
-E("Descansa las manos.","Rest your hands.","Descanse as mãos."),
-E("Permanece tranquilo unos segundos.","Remain calm for a few seconds.","Permaneça tranquilo por alguns segundos."),
-E("Haz una última respiración cómoda.","Take one final comfortable breath.","Faça uma última respiração confortável."),
-E("Cuando estés listo, termina este momento tranquilamente.","When you are ready, calmly finish this moment.","Quando estiver pronto, termine este momento tranquilamente.")
-)
+STRICT LEGAL & OPERATIONAL RULES:
+1. NEVER mention words like "phase", "fase", "auditoría", "IA", or "ChatGPT". Be purely action-oriented and professional.
+2. NEVER use medical terminology, clinical terms, diagnoses, or anything implying medical treatment or authority. This is strictly a lifestyle, comfort, relaxation, and physical wellbeing guidance service.
+3. NEVER repeat the exact same session twice. Always introduce fresh phrasing, varied exercise sequences, and unique restorative focuses while maintaining absolute safety.
+4. NEVER include internal ID numbers, random codes, or technical tags in the text output.
+5. IF THIS IS A FREE 30-SECOND PREVIEW (is_hook=true):
+   - Provide a quick, light greeting and a single simple breathing action that lasts about 30 seconds when read aloud.
+6. IF THIS IS THE FULL 10-MINUTE SESSION (is_hook=false) - APPLIES TO STRIPE AND USERNAME/PASSWORD:
+   - Act as a live personal wellness trainer.
+   - Write an extensive, deep, continuous, and highly detailed routine designed to take a full 10 minutes of calm, slow spoken practice.
+   - Include inclusive instructions: if a user lacks limbs or mobility, guide them to perform the movements mentally or focus on available joints, fingers, neck, shoulders, and breathing.
+   - Break down the flow naturally into continuous paragraphs with plenty of descriptive pacing and pauses.
+"""
+
+FALLBACK_SESSIONS_ES=[
+"Bienvenido a su espacio personal de bienestar y armonía diaria. Tómese un instante para acomodarse con absoluta comodidad, ya sea sentado plácidamente en su sillón favorito o descansando de forma reposada en su cama. Vamos a comenzar este momento de pausa centrando toda nuestra atención en el ritmo natural de la respiración. Sienta cómo el aire fresco ingresa suavemente a través de su nariz, recorre su interior y sale despacio, aliviando cualquier rastro de tensión acumulada en el día. Permita que sus hombros desciendan de manera completamente natural, soltando el peso de la jornada y encontrando un punto de apoyo firme y seguro en la superficie que lo sostiene. Si le es posible y cuenta con movilidad en sus manos y dedos, hágalo de forma sumamente pausada, disfrutando del tacto y la presencia de su propio cuerpo. Si prefiere el reposo absoluto o la quietud, acompañe este proceso sintiendo el calor y el equilibrio de su postura. Inhale despacio contando mentalmente hasta cuatro, sostenga el aire con total serenidad durante un instante, y exhale con suavidad infinita mientras recorremos juntos este sendero de calma profunda. Permítase un momento para desconectarse de las distracciones externas y habitar este presente lleno de tranquilidad. Su postura debe sentirse cómoda, sin forzar absolutamente nada; simplemente deje que el cuerpo encuentre su propio estado de relajación natural. Continuamos manteniendo este flujo de aire constante, notando cómo cada exhalación regala una sensación de descanso renovador a cada fibra de su ser, brindándole estabilidad, esperanza y un profundo bienestar interior en este espacio diseñado exclusivamente para usted.",
+"Comenzamos este momento especial dedicado enteramente a su descanso, equilibrio físico y confort cotidiano. Ubíquese en la posición que hoy le brinde mayor seguridad y bienestar general. Vamos a dirigir la atención hacia el área del cuello y la cabeza, realizando un movimiento imperceptible y muy delicado de lado a lado solo si su cuerpo se lo permite de manera natural, o bien visualizando ese movimiento con total serenidad en su mente. Sienta cómo los músculos de la mandíbula se aflojan, cómo la frente se despeja y cómo la expresión del rostro se vuelve apacible. Tomaremos el control consciente del ritmo de la respiración: inhalamos profundamente llenando el pecho con energía renovada, retenemos el aire con extrema suavidad, y exhalamos muy despacio liberando cualquier carga del entorno. Disfrute de esta atención plena orientada a su comodidad. Cada segundo invertido en esta práctica es un regalo para su calidad de vida y su tranquilidad mental. Si se encuentra recostado o descansando en su cama, sienta el soporte completo de su espalda, la almohada sosteniendo su cabeza con firmeza y los brazos reposando en un ángulo de total comodidad. Vamos a mantener esta cadencia de respiración pausada, permitiendo que el tiempo transcurra con suavidad, sin prisa, acompañando cada minuto con una actitud abierta, positiva y reconfortante.",
+"Un cordial saludo en esta nueva sesión de cuidado personal y bienestar integral. Conéctese con su comodidad adoptando una postura que le ofrezca un soporte firme, relajado y completamente seguro. Hoy centraremos nuestra atención en la apertura del pecho y en la expansión de una respiración amplia y fluida. Si tiene movilidad en sus brazos, deslícelos con delicadeza hacia una posición de mayor holgura; de lo contrario, concéntrese por completo en percibir la expansión y contracción natural del tórax al compás del aire. Note de manera consciente el punto exacto de contacto de su espalda con el respaldo o la superficie de descanso, sintiendo cómo el cuerpo se afianza con confianza. Cada exhalación representa una magnífica oportunidad para soltar las preocupaciones cotidianas y regalarle a su organismo un respiro profundo, ordenado y armónico. Mantenga su mente enfocada en este instante presente, disfrutando del silencio constructivo y de la compañía de esta guía diseñada para propiciar un estado óptimo de relajación y estabilidad. Siga respirando de manera lenta, permitiendo que la calma se expanda desde el centro de su pecho hacia los brazos, las manos y el resto de su cuerpo, consolidando un refugio de paz interior.",
+"Le damos la más cordial bienvenida a su pausa activa y restaurativa de hoy. Sin importar si se encuentra en plena actividad cotidiana, sentado con comodidad o descansando plácidamente en cama, la prioridad absoluta es su confort. Vamos a llevar una suave conciencia hacia los puntos de apoyo principales de su cuerpo: la espalda, las piernas o los brazos, reconociendo el espacio físico que habita con total gratitud. Comience a percibir el latido calmado y constante de su corazón, acompañándolo con respiraciones largas, profundas y sin ningún tipo de exigencia. Si le es posible dentro de su comodidad actual, mueva milimétricamente las muñecas o los dedos de los pies; si prefiere la quietud, permita que la visualización y la respiración consciente cumplan la labor de relajar cada rincón de su anatomía. Este ejercicio promueve una sensación inigualable de ligereza y descanso profundo. Permítase flotar en esta atmósfera de tranquilidad, donde el único objetivo es su bienestar y su comodidad absoluta. Continuamos respirando con suavidad, dejando que los minutos transcurran en un entorno de paz, equilibrio y seguridad inquebrantable.",
+"Iniciamos este momento de profunda conexión con su bienestar personal y equilibrio físico. Acomódese con absoluta libertad y cierre los ojos si le apetece, permitiendo que la voz le acompañe paso a paso en este recorrido de relajación. Hoy trabajaremos en la disolución de tensiones acumuladas en la parte superior del cuerpo. Relaje los músculos de la cara, despegue ligeramente los dientes, deje caer los hombros alejándolos de las orejas y respire profundamente. Si alguna zona corporal presenta rigidez o limitaciones de movimiento, evite forzarla por completo; simplemente obsérvela con aceptación y envíele una bocanada de aire cálido y reconfortante. Sienta cómo una corriente de bienestar recorre su organismo de pies a cabeza en un flujo constante, apacible y revitalizador. Este espacio está pensado para brindarle estabilidad y esperanza, permitiéndole reconectar con su centro de energía y tranquilidad. Siga disfrutando de este compás pausado, sabiendo que cada inhalación fortalece su equilibrio y cada exhalación borra cualquier rastro de prisa o inquietud.",
+"Bienvenido a su rutina de relajación y movimiento adaptado para el bienestar general. Tome aire de manera natural, profunda y dosificada, permitiendo que el área del abdomen se expanda con total libertad. Vamos a realizar un recorrido mental consciente por todo su cuerpo, reconociendo cada parte con afecto y respeto por su estado actual. Si posee movilidad en sus extremidades, realice pequeños círculos sumamente lentos con las manos; si se encuentra en reposo absoluto, imagine ese movimiento fluyendo con perfecta armonía en su imaginación. Mantenga una respiración compasiva y constante, disfrutando del silencio y de la seguridad de este entorno creado para su cuidado. La constancia en estos pequeños hábitos de pausa aporta una gran estabilidad emocional y física, ayudando a que su día transcurra con mayor fluidez y serenidad. Permanezca receptivo a esta sensación de descanso, dejando que el cuerpo se recupere y encuentre su propia naturalidad sin prisas ni presiones de ninguna índole.",
+"Es un verdadero placer acompañarle en este espacio de bienestar estructurado exclusivamente para su comodidad. Sintonice con el momento presente ajustando su postura hasta hallar el punto exacto de reposo y confort. Vamos a enfocar la atención en el centro de su cuerpo, permitiendo que cada inhalación traiga una bocanada de energía renovada y que cada exhalación se lleve cualquier molestia superficial. Mantenga los brazos y las piernas en la posición que hoy le otorgue mayor alivio, guiándose únicamente por el compás pausado de una respiración consciente y deliberada. Este tiempo le pertenece por completo; es un compromiso con su propia calidad de vida y su equilibrio diario. Sienta el respaldo firme que lo sostiene y entregue el peso de su cuerpo a la superficie con total confianza, sabiendo que se encuentra en un entorno seguro y protector. Continúe respirando lento y profundo mientras acompañamos cada instante con serenidad, armonía y un profundo respeto por su comodidad.",
+"Comenzamos una nueva práctica enfocada en su paz interior, estabilidad y confort físico general. Adopte una postura que le proporcione un soporte óptimo y una sensación inquebrantable de seguridad. Vamos a relajar paulatinamente los dedos de las manos, los brazos y la columna vertebral mediante respiraciones profundas, pausadas y bien dirigidas. Si alguna extremidad carece de movimiento, recuerde que su mente y su respiración cumplen el rol principal de activar la relajación profunda y la circulación armónica. Permítase desconectarse temporalmente del exterior y habitar este instante de tranquilidad absoluta, donde las tensiones simplemente se desvanecen. Cada ciclo de aire fresco limpia su mente y revitaliza su postura, permitiéndole experimentar una profunda renovación desde la comodidad de su asiento o cama. Disfrute de la estabilidad y la paz que este espacio le otorga en cada segundo, manteniendo una actitud de calma y bienestar duradero.",
+"Bienvenido a su sesión de revitalización, descanso y equilibrio armónico. Busque la postura más cómoda y favorable disponible para usted en este preciso momento. Dirigiremos la atención hacia la zona de los hombros y la parte alta de la espalda, imaginando que una brisa ligera y cálida disuelve cualquier rigidez presente. Tome una inspiración profunda, llene sus pulmones sin prisa alguna y deje salir el aire de forma prolongada y suave a través de sus labios. Sienta cómo el cuerpo se afloja notablemente y se entrega a un descanso reparador, manteniendo siempre una práctica segura, libre de exigencias y adaptada enteramente a su ritmo. Este proceso favorece la distensión muscular y le otorga un valioso momento de tregua frente a las exigencias del día a día. Siga respirando de este modo, permitiendo que la tranquilidad inunde cada espacio de su mente y su cuerpo con total naturalidad.",
+"Cerramos nuestro ciclo de recomendaciones de bienestar con una sesión centrada en la serenidad absoluta y el confort restaurador. Acomódese con la absoluta certeza de que este tiempo le pertenece por completo. Vamos a unificar la respiración con pequeños movimientos conscientes o con una visualización profunda de ligereza y bienestar en todo su entorno. Sienta el soporte firme que lo sostiene, relaje cada músculo de su rostro y permita que el aire fluya sin ningún tipo de obstáculo ni restricción. Disfrute de la estabilidad y la paz que este espacio le proporciona, sabiendo que cuidar de su descanso es la mejor manera de honrar su vitalidad. Permanezca unos instantes disfrutando de esta sensación de plenitud, con la tranquilidad de haber dedicado un espacio genuino a su armonía personal. Inhale profundo por última vez en esta sesión, sonría con suavidad y prepárese para continuar su día con una renovada sensación de paz y bienestar.",
+"Iniciamos un nuevo espacio dedicado por completo a su bienestar cotidiano y a la paulatina relajación de todo su sistema físico. Adopte una postura que le resulte sumamente agradable y placentera. Lleve su mente hacia las palmas de las manos, imaginando que una agradable sensación de calor las recorre suavemente. Si descansa en cama, permita que el colchón soporte enteramente su peso sin que usted deba realizar esfuerzo alguno. Realice una inspiración lenta, sintiendo cómo el aire expande suavemente el área del abdomen, y al expirar, suelte cualquier pensamiento o preocupación del momento. Esta práctica está diseñada para propiciar un remanso de paz en medio de su jornada, ayudándole a recuperar la energía vital mediante la quietud y la respiración consciente. Permita que la tranquilidad le envuelva por completo, disfrutando de cada instante en este refugio de confort y armonía personal.",
+"Le damos la bienvenida a esta sesión orientada al equilibrio y la distensión integral. Ajuste su posición corporal para garantizar que su cuello, espalda y extremidades se encuentren plenamente respaldados. Concentre su atención en el simple acto de respirar: perciba la temperatura del aire al entrar y la calidez al salir de su cuerpo. Si nota alguna pequeña tensión en el rostro o en la mandíbula, relájela intencionalmente permitiendo que los labios se entreabran con total naturalidad. Cada inhalación le aporta serenidad y cada exhalación afianza una profunda sensación de estabilidad en su entorno. Disfrute de este valioso tiempo de cuidado y descanso.",
+"Comenzamos una pausa restaurativa centrada en el alivio y la comodidad física. Relaje los brazos a los lados de su cuerpo o sobre su regazo de la manera más cómoda posible. Visualice una suave onda de bienestar que desciende lentamente desde la coronilla hasta la punta de los pies, disipando cualquier rigidez a su paso. Acompañe este recorrido mental con respiraciones rítmicas, profundas y sumamente calmadas, evitando cualquier prisa o exigencia. Este espacio seguro es suyo para recargar energías, encontrar paz mental y disfrutar de un confort duradero.",
+"Saludamos este instante de pausa y armonía enfocado en su bienestar personal. Conéctese con la firmeza del suelo o de la cama que sostiene su cuerpo en este momento. Permita que la respiración se vuelva cada vez más lenta y profunda, sirviendo como un ancla segura para mantener la mente tranquila y despejada. Si lo prefiere, mantenga los ojos cerrados mientras su atención descansa apaciblemente en el flujo constante del aire. Disfrute de la estabilidad y el sosiego que esta práctica le otorga, consolidando un estado óptimo de relajación y descanso.",
+"Nos adentramos en una sesión pensada para brindarle un respiro profundo y una total distensión corporal. Colóquese en la postura que le aporte mayor desahogo y confort. Dirija su mirada interior hacia la zona de la espalda y los hombros, permitiendo que el peso de los mismos se deslice hacia la superficie de apoyo. Respire con absoluta calma, llenando su interior de esperanza, bienestar y una agradable sensación de liviandad. Este es su momento para habitar el presente con total tranquilidad y seguridad.",
+"Bienvenido a este momento de armonización y cuidado de su estilo de vida. Tome una posición que le permita relajar por completo la columna y la zona lumbar. Inhale aire fresco con alegría, sosténgalo unos segundos con suavidad, y expúlselo lentamente dejando ir cualquier rigidez del entorno. Permita que la quietud y el silencio fortalezcan su paz interior, disfrutando plenamente de cada minuto de este descanso enriquecedor.",
+"Iniciamos una práctica destinada a cultivar el confort, el equilibrio y la paz en su día a día. Sienta el soporte de la almohada o el respaldar adaptándose a su forma. Realice respiraciones profundas y pausadas, centrando toda su atención en el bienestar que surge al soltar las tensiones cotidianas. Disfrute de este espacio exclusivo de tranquilidad, diseñado para restaurar su energía vital con absoluta naturalidad y seguridad.",
+"Comenzamos un espacio de descanso y relajación profunda para acompañar su rutina de bienestar. Adopte una postura cómoda, libre de presiones y exigencias. Sienta el flujo rítmico de su respiración y cómo cada ciclo le otorga una mayor sensación de ligereza y estabilidad interior. Permanezca en este refugio de paz, disfrutando del silencio constructivo y de una total comodidad física.",
+"Le saludamos en esta sesión de pausa y armonía diseñada para su confort diario. Ubíquese en el sitio que le ofrezca mayor solidez y bienestar. Conecte con su respiración natural, permitiendo que el aire limpie y relaje cada rincón de su cuerpo de manera apacible y constante. Disfrute de este momento de tregua, estabilidad y cuidado personal sin prisas.",
+"Finalizamos nuestro repertorio de bienestar con una sesión orientada al equilibrio absoluto y la paz interior. Acomódese con la certeza de que este tiempo es suyo. Respire hondo, relaje los músculos del rostro y entregue su peso corporal a la superficie con absoluta confianza y serenidad. Disfrute de esta profunda sensación de plenitud y prepárese para continuar su jornada con total armonía."
 ]
 
-if len(BACKUPS)!=20:
-    raise RuntimeError(f"AL CIELO requiere exactamente 20 respaldos y encontró {len(BACKUPS)}.")
+if len(FALLBACK_SESSIONS_ES)!=20:
+    raise RuntimeError(f"AL CIELO requiere exactamente 20 respaldos originales y encontró {len(FALLBACK_SESSIONS_ES)}.")
 
-for backup in BACKUPS:
-    for lang in ("es","en","pt"):
-        if len(backup[lang]["exercises"])!=8:
-            raise RuntimeError("Cada respaldo debe contener exactamente 8 ejercicios.")
-
-def fallback_session(device_id,language,is_hook=False):
-    if is_hook:
-        return {
-            "title":{
-                "es":"AL CIELO",
-                "en":"AL CIELO",
-                "pt":"AL CIELO"
-            }[language],
-            "exercises":[{
-                "title":"Parte 1",
-                "instruction":{
-                    "es":"Bienvenido. Cuando estés listo, comienza tranquilamente.",
-                    "en":"Welcome. When you are ready, begin calmly.",
-                    "pt":"Bem-vindo. Quando estiver pronto, comece com calma."
-                }[language]
-            }]
-        }
-    return BACKUPS[next_backup(device_id,language)][language]
-
-def clean_text(v):
-    if not isinstance(v,str):
-        return ""
-    return re.sub(r"\s+"," ",v).strip()
-
-def language_ok(text,language):
-    t=text.lower()
+def fallback_session(device_id,language):
+    position=next_backup(device_id,language)
     if language=="es":
-        return any(x in t for x in (" el "," la "," que "," una "," para "," y "))
+        return FALLBACK_SESSIONS_ES[position]
     if language=="en":
-        return any(x in t for x in (" the "," and "," you "," your "," to "," with "))
-    return any(x in t for x in (" o "," a "," que "," para "," você "," com "))
-    
-def normalize_session(raw,language):
-    if isinstance(raw,str):
-        try:
-            raw=json.loads(raw)
-        except:
-            return None
+        return FALLBACK_SESSIONS_ES[position]
+    return FALLBACK_SESSIONS_ES[position]
 
-    if not isinstance(raw,dict):
-        return None
-
-    title=clean_text(raw.get("title","AL CIELO"))
-    exercises=raw.get("exercises")
-
-    if not isinstance(exercises,list):
-        return None
-
-    valid=[]
-    for i,x in enumerate(exercises):
-        if not isinstance(x,dict):
-            continue
-        instruction=clean_text(x.get("instruction",""))
-        if not instruction:
-            continue
-        valid.append({
-            "title":clean_text(x.get("title",f"Parte {i+1}")) or f"Parte {i+1}",
-            "instruction":instruction
-        })
-
-    if len(valid)<8:
-        return None
-
-    return {
-        "title":title or "AL CIELO",
-        "exercises":valid[:8]
-    }
-
-async def generate_gemini(language):
-    if not GEMINI_API_KEY:
-        return None
-    try:
-        import httpx
-        prompt=f"""
-Crea una sesión de AL CIELO en idioma {language}.
-No uses lenguaje médico, clínico, terapéutico, diagnóstico ni tratamiento.
-Debe ser una experiencia sencilla para una persona adulta que está sentada, descansando o acostada.
-Devuelve SOLO JSON válido:
-{{
-"title":"...",
-"exercises":[
-{{"title":"Parte 1","instruction":"..."}},
-{{"title":"Parte 2","instruction":"..."}},
-{{"title":"Parte 3","instruction":"..."}},
-{{"title":"Parte 4","instruction":"..."}},
-{{"title":"Parte 5","instruction":"..."}},
-{{"title":"Parte 6","instruction":"..."}},
-{{"title":"Parte 7","instruction":"..."}},
-{{"title":"Parte 8","instruction":"..."}}
-]
-}}
-Cada instruction debe ser un párrafo claro.
-No pongas el título dentro de instruction.
-"""
-        url=f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
-        async with httpx.AsyncClient(timeout=30) as client:
-            r=await client.post(url,json={
-                "contents":[{"parts":[{"text":prompt}]}],
-                "generationConfig":{"temperature":0.7,"responseMimeType":"application/json"}
-            })
-        if r.status_code!=200:
-            return None
-        data=r.json()
-        text=data["candidates"][0]["content"]["parts"][0]["text"]
-        return normalize_session(text,language)
-    except:
-        return None
-
-async def generate_openai(language):
-    if not OPENAI_API_KEY:
-        return None
-    try:
-        import httpx
-        prompt=f"""
-Crea una sesión AL CIELO en {language}.
-No uses lenguaje médico, clínico, terapéutico, diagnóstico ni tratamiento.
-La persona puede estar sentada, descansando o acostada.
-Devuelve únicamente JSON válido con un title y exactamente 8 exercises.
-Cada exercise debe tener title e instruction.
-La instruction es el único contenido que será leído por voz.
-No pongas el título dentro de instruction.
-"""
-        async with httpx.AsyncClient(timeout=30) as client:
-            r=await client.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers={
-                    "Authorization":f"Bearer {OPENAI_API_KEY}",
-                    "Content-Type":"application/json"
-                },
-                json={
-                    "model":OPENAI_MODEL,
-                    "temperature":0.7,
-                    "response_format":{"type":"json_object"},
-                    "messages":[
-                        {
-                            "role":"system",
-                            "content":"Devuelve solamente JSON válido."
-                        },
-                        {
-                            "role":"user",
-                            "content":prompt
-                        }
-                    ]
-                }
-            )
-        if r.status_code!=200:
-            return None
-        data=r.json()
-        text=data["choices"][0]["message"]["content"]
-        return normalize_session(text,language)
-    except:
-        return None
-
-def session_text(session):
-    return "\n".join(
-        x["instruction"] for x in session.get("exercises",[])
-    )
-
-@app.get("/",response_class=HTMLResponse)
-async def home():
-    if not INDEX_PATH.exists():
-        return HTMLResponse(
-            "<h1>AL CIELO</h1><p>No se encontró index.html.</p>",
-            status_code=500
-        )
-    return FileResponse(INDEX_PATH,media_type="text/html")
+@app.get("/",response_class=FileResponse)
+async def serve_frontend():
+    if not INDEX_FILE.exists():
+        raise HTTPException(status_code=500,detail="index.html not found.")
+    return FileResponse(str(INDEX_FILE),media_type="text/html")
 
 @app.get("/health")
 async def health():
-    return {
-        "status":"ok",
-        "app":"AL CIELO",
-        "version":APP_VERSION,
-        "base_url":BASE_URL,
-        "backups":20,
-        "backup_exercises":8,
-        "index":"index.html"
-    }
+    return {"status":"ok","service":"AL CIELO","backups":len(FALLBACK_SESSIONS_ES)}
 
 @app.get("/api/v1/config")
 async def config():
-    return {
-        "status":"success",
-        "app":"AL CIELO",
-        "version":APP_VERSION,
-        "base_url":BASE_URL,
-        "languages":["es","en","pt"],
-        "backup_sessions":20,
-        "backup_exercises":8,
-        "speech":{
-            "read":"instruction_only",
-            "read_title":False,
-            "gap_seconds":6,
-            "gap_starts_after_speech":True
-        },
-        "stripe":bool(STRIPE_SECRET_KEY and STRIPE_PRICE_ID)
-    }
+    return {"status":"success","service":"AL CIELO","base_url":BASE_URL,"backups":20}
 
 @app.get("/api/v1/access-status")
-async def access_status(device_id:Optional[str]=None):
-    return {
-        "authorized":authorized(device_id),
-        "device_id":device_id
-    }
+async def access_status(device_id:str=""):
+    return {"authorized":check_device_authorization(device_id)}
 
 @app.post("/api/v1/authorize-courtesy")
-async def authorize_courtesy(payload:dict):
-    username=str(payload.get("username","")).strip()
-    password=str(payload.get("password",""))
-    device_id=str(payload.get("device_id","")).strip()
-
+async def authorize_courtesy(request:Request):
+    body=await request.json()
+    username=body.get("username","").strip()
+    password=body.get("password","").strip()
+    device_id=body.get("device_id","").strip()
     if not ADMIN_USER or not ADMIN_PASS:
-        return JSONResponse(
-            {"status":"error","message":"Acceso administrativo no configurado."},
-            status_code=503
-        )
-
-    if username!=ADMIN_USER or password!=ADMIN_PASS or not device_id:
-        return JSONResponse(
-            {"status":"error","message":"Datos de acceso incorrectos."},
-            status_code=401
-        )
-
-    authorize_device(device_id)
-    return {
-        "status":"success",
-        "authorized":True
-    }
+        raise HTTPException(status_code=500,detail="Admin credentials not configured in Render environment variables.")
+    if username==ADMIN_USER and password==ADMIN_PASS and device_id:
+        authorize_device(device_id)
+        return {"status":"success","authorized":True}
+    raise HTTPException(status_code=401,detail="Invalid credentials.")
 
 @app.post("/api/v1/create-checkout-session")
-async def create_checkout_session(payload:dict):
-    device_id=str(payload.get("device_id","")).strip()
-
-    if not device_id:
-        return JSONResponse(
-            {"status":"error","message":"Falta device_id."},
-            status_code=400
-        )
-
-    if not STRIPE_SECRET_KEY or not STRIPE_PRICE_ID:
-        return JSONResponse(
-            {"status":"error","message":"Stripe no está configurado."},
-            status_code=503
-        )
-
+async def create_checkout_session(request:Request):
     try:
-        session=stripe.checkout.Session.create(
-            line_items=[
-                {
-                    "price":STRIPE_PRICE_ID,
-                    "quantity":1
-                }
-            ],
+        body=await request.json()
+        device_id=str(body.get("device_id","")).strip()
+        if not device_id:
+            raise HTTPException(status_code=400,detail="Device ID required.")
+        if not stripe.api_key:
+            raise HTTPException(status_code=500,detail="STRIPE_SECRET_KEY is missing in Render.")
+        if not STRIPE_PRICE_ID:
+            raise HTTPException(status_code=500,detail="STRIPE_PRICE_ID is missing in Render.")
+        checkout_session=stripe.checkout.Session.create(
+            line_items=[{"price":STRIPE_PRICE_ID,"quantity":1}],
             mode="subscription",
-            success_url=f"{BASE_URL}/success?session_id={{CHECKOUT_SESSION_ID}}&device_id={device_id}",
+            success_url=f"{BASE_URL}/success?session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{BASE_URL}/cancel",
-            metadata={
-                "device_id":device_id
-            },
+            metadata={"device_id":device_id},
             allow_promotion_codes=True
         )
-
-        return {
-            "status":"success",
-            "checkout_url":session.url,
-            "session_id":session.id
-        }
+        return {"status":"success","checkout_url":checkout_session.url}
+    except HTTPException:
+        raise
+    except stripe.error.StripeError as e:
+        raise HTTPException(status_code=502,detail=f"Stripe error: {str(e)}")
     except Exception as e:
-        return JSONResponse(
-            {
-                "status":"error",
-                "message":str(e)
-            },
-            status_code=500
-        )
+        raise HTTPException(status_code=500,detail=f"Checkout error: {str(e)}")
 
 @app.post("/webhook/stripe")
-async def stripe_webhook(request:Request):
+async def stripe_webhook(request:Request,stripe_signature:str=Header(default=None)):
     payload=await request.body()
-    signature=request.headers.get("stripe-signature","")
-
+    if not STRIPE_WEBHOOK_SECRET:
+        raise HTTPException(status_code=500,detail="STRIPE_WEBHOOK_SECRET is missing in Render.")
+    if not stripe_signature:
+        raise HTTPException(status_code=400,detail="Missing Stripe-Signature header.")
     try:
-        if STRIPE_WEBHOOK_SECRET:
-            event=stripe.Webhook.construct_event(
-                payload,
-                signature,
-                STRIPE_WEBHOOK_SECRET
-            )
-        else:
-            event=json.loads(payload.decode("utf-8"))
-    except Exception:
-        return JSONResponse(
-            {"status":"error","message":"Webhook inválido."},
-            status_code=400
-        )
+        event=stripe.Webhook.construct_event(payload,stripe_signature,STRIPE_WEBHOOK_SECRET)
+    except ValueError:
+        raise HTTPException(status_code=400,detail="Invalid webhook payload.")
+    except stripe.error.SignatureVerificationError:
+        raise HTTPException(status_code=400,detail="Invalid Stripe webhook signature.")
+    except Exception as e:
+        raise HTTPException(status_code=400,detail=f"Webhook error: {str(e)}")
 
-    event_type=event.get("type","")
-    obj=event.get("data",{}).get("object",{})
-
+    event_type=event.get("type")
     if event_type=="checkout.session.completed":
-        metadata=obj.get("metadata") or {}
-        device_id=str(metadata.get("device_id","")).strip()
-        payment_status=obj.get("payment_status")
-        customer=obj.get("customer")
-        subscription=obj.get("subscription")
-
+        session=event["data"]["object"]
+        metadata=session.get("metadata") or {}
+        device_id=metadata.get("device_id")
+        customer_id=session.get("customer")
+        subscription_id=session.get("subscription")
+        payment_status=session.get("payment_status")
         if device_id and payment_status in ("paid","no_payment_required"):
-            authorize_device(
-                device_id,
-                customer,
-                subscription
-            )
-
+            authorize_device(device_id,customer_id,subscription_id)
     elif event_type=="customer.subscription.deleted":
-        deactivate_subscription(obj.get("id"))
-
+        subscription=event["data"]["object"]
+        deactivate_device_by_subscription(subscription.get("id"))
     elif event_type=="customer.subscription.unpaid":
-        deactivate_subscription(obj.get("id"))
+        subscription=event["data"]["object"]
+        deactivate_device_by_subscription(subscription.get("id"))
+    return {"status":"success"}
 
-    elif event_type=="customer.subscription.updated":
-        status=obj.get("status")
-        subscription_id=obj.get("id")
+@app.get("/success",response_class=HTMLResponse)
+async def payment_success(session_id:str=None):
+    if not session_id:
+        return """<html><body style="background:#0f172a;color:white;text-align:center;padding-top:60px;font-family:sans-serif;"><h1>AL CIELO</h1><p>Payment information not found.</p><a href="/" style="display:inline-block;margin-top:20px;padding:12px 24px;background:#0284c7;color:white;text-decoration:none;border-radius:8px;">Return to AL CIELO</a></body></html>"""
+    try:
+        session=stripe.checkout.Session.retrieve(session_id)
+        if session.get("payment_status") in ("paid","no_payment_required"):
+            return f"""<html><body style="background:#0f172a;color:white;text-align:center;padding-top:60px;font-family:sans-serif;"><h1 style="color:#4ade80;">AL CIELO</h1><p>Payment received.</p><p>Confirming your access...</p><script>setTimeout(function(){{window.location.replace("{BASE_URL}/");}},1200);</script><a href="/" style="display:inline-block;margin-top:20px;padding:12px 24px;background:#0284c7;color:white;text-decoration:none;border-radius:8px;">Return to AL CIELO</a></body></html>"""
+    except Exception:
+        pass
+    return """<html><body style="background:#0f172a;color:white;text-align:center;padding-top:60px;font-family:sans-serif;"><h1 style="color:#f87171;">AL CIELO</h1><p>We could not verify the payment yet.</p><a href="/" style="display:inline-block;margin-top:20px;padding:12px 24px;background:#0284c7;color:white;text-decoration:none;border-radius:8px;">Return to AL CIELO</a></body></html>"""
 
-        if status in ("active","trialing"):
-            c=db()
-            c.execute("""
-            UPDATE authorized_devices
-            SET status='active',updated_at=?
-            WHERE stripe_subscription_id=?
-            """,(time.time(),subscription_id))
-            c.commit()
-            c.close()
-        elif status in ("unpaid","canceled","incomplete_expired"):
-            deactivate_subscription(subscription_id)
-
-    return {
-        "status":"success"
-    }
-
-@app.get("/success")
-async def success(
-    session_id:Optional[str]=None,
-    device_id:Optional[str]=None
-):
-    sid=session_id or ""
-    did=device_id or ""
-
-    if sid and STRIPE_SECRET_KEY:
-        try:
-            session=stripe.checkout.Session.retrieve(sid)
-            meta=session.get("metadata") or {}
-            did=did or str(meta.get("device_id","")).strip()
-
-            if (
-                did
-                and session.get("payment_status") in ("paid","no_payment_required")
-                and not authorized(did)
-            ):
-                subscription=session.get("subscription")
-                customer=session.get("customer")
-                authorize_device(
-                    did,
-                    customer,
-                    subscription
-                )
-        except:
-            pass
-
-    html=f"""
-<!doctype html>
-<html lang="es">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AL CIELO</title>
-<style>
-html,body{{margin:0;background:#000;color:#fff;font-family:Arial,sans-serif;text-align:center}}
-main{{max-width:700px;margin:15vh auto;padding:24px}}
-h1{{font-size:42px}}
-p{{font-size:22px;line-height:1.5}}
-a{{display:inline-block;margin-top:20px;padding:18px 28px;background:#fff;color:#000;text-decoration:none;border-radius:10px;font-size:20px}}
-</style>
-</head>
-<body>
-<main>
-<h1>AL CIELO</h1>
-<p>Estamos verificando tu acceso.</p>
-<p id="status">Espera un momento...</p>
-<a href="{BASE_URL}">ENTRAR A AL CIELO</a>
-</main>
-<script>
-const base={json.dumps(BASE_URL)};
-const device={json.dumps(did)};
-let tries=0;
-async function check(){{
-    tries++;
-    try{{
-        const r=await fetch(base+"/api/v1/access-status?device_id="+encodeURIComponent(device));
-        const d=await r.json();
-        if(d.authorized){{
-            document.getElementById("status").textContent="Acceso confirmado. Entrando...";
-            setTimeout(()=>window.location.replace(base),500);
-            return;
-        }}
-    }}catch(e){{}}
-    if(tries<40){{
-        setTimeout(check,750);
-    }}else{{
-        document.getElementById("status").textContent="Si acabas de pagar, pulsa ENTRAR A AL CIELO.";
-    }}
-}}
-check();
-</script>
-</body>
-</html>
-"""
-    return HTMLResponse(html)
-
-@app.get("/cancel")
-async def cancel():
-    return HTMLResponse(f"""
-<!doctype html>
-<html lang="es">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AL CIELO</title>
-<style>
-html,body{{margin:0;background:#000;color:#fff;font-family:Arial,sans-serif;text-align:center}}
-main{{max-width:700px;margin:15vh auto;padding:24px}}
-h1{{font-size:42px}}
-p{{font-size:22px;line-height:1.5}}
-a{{display:inline-block;margin-top:20px;padding:18px 28px;background:#fff;color:#000;text-decoration:none;border-radius:10px;font-size:20px}}
-</style>
-</head>
-<body>
-<main>
-<h1>AL CIELO</h1>
-<p>El proceso de pago no se completó.</p>
-<a href="{BASE_URL}">VOLVER A AL CIELO</a>
-</main>
-</body>
-</html>
-""")
+@app.get("/cancel",response_class=HTMLResponse)
+async def payment_cancel():
+    return """<html><body style="background:#0f172a;color:white;text-align:center;padding-top:60px;font-family:sans-serif;"><h1 style="color:#f87171;">AL CIELO</h1><p>No subscription was activated.</p><a href="/" style="display:inline-block;margin-top:20px;padding:12px 24px;background:#0284c7;color:white;text-decoration:none;border-radius:8px;">Return to AL CIELO</a></body></html>"""
 
 @app.post("/api/v1/generate-session")
-async def generate_session(payload:dict):
-    device_id=str(payload.get("device_id","")).strip()
-    language=str(payload.get("language","es")).lower().strip()
-    is_hook=bool(payload.get("is_hook",False))
+async def generate_session(request:Request):
+    try:
+        body=await request.json()
+        device_id=str(body.get("device_id","")).strip()
+        language=body.get("language","es")
+        is_hook=bool(body.get("is_hook",False))
 
-    if language not in ("es","en","pt"):
-        language="es"
+        if language not in ("es","en","pt"):
+            language="es"
+        if not device_id:
+            raise HTTPException(status_code=400,detail="Device id required.")
+        if not is_hook and not check_device_authorization(device_id):
+            raise HTTPException(status_code=403,detail="Subscription or login required for full session.")
 
-    if not device_id:
-        return JSONResponse(
-            {"status":"error","message":"Falta device_id."},
-            status_code=400
-        )
+        lang_names={"es":"Spanish","en":"English","pt":"Portuguese"}
+        selected_lang_name=lang_names[language]
 
-    if is_hook:
-        session=fallback_session(
-            device_id,
-            language,
-            True
-        )
+        unique_prompt_modifier=random.choice([
+            "Focus heavily on shoulder relaxation, upper body comfort, and peaceful pacing.",
+            "Focus heavily on hand, finger, and wrist gentle micro-movements combined with deep serenity.",
+            "Focus heavily on breathing rhythm, chest expansion, and spine posture alignment.",
+            "Focus heavily on gentle neck comfort, facial relaxation, and total body grounding.",
+            "Focus heavily on seated or resting comfort, calm breathing, and slow natural movements."
+        ])
+
+        if is_hook:
+            prompt=f"""
+Generate a strict 30-SECOND FREE PREVIEW in [{selected_lang_name}].
+Keep it extremely brief, maximum 50 words: a warm greeting and one single gentle breathing action.
+No medical terms, no codes or IDs.
+Output ONLY plain conversational text in {selected_lang_name}. No titles.
+"""
+            max_tokens=150
+        else:
+            prompt=f"""
+{unique_prompt_modifier}
+Generate a completely unique, extensive, deep, continuous, and professional 10-MINUTE GUIDED WELLNESS AND LIFESTYLE SESSION strictly in [{selected_lang_name}]
+for adults aged 50 and over, inclusive of active, seated, resting, or poststrated individuals, including those with limited mobility or missing limbs.
+Act strictly as a live human personal wellness trainer and lifestyle companion guiding the user step by step in real time.
+DO NOT use the word 'fase' or 'phase', nor any medical or clinical terminology.
+DO NOT include random numbers, IDs, codes, or technical tags.
+Vary the exercise sequence, phrasing, and focus compared to standard routines so it feels fresh and unique.
+Write a rich continuous coaching routine with gentle movements, postural comfort, sensory awareness, breathing and calm pacing.
+Output ONLY plain conversational text in {selected_lang_name}. No meta-commentary or titles.
+"""
+            max_tokens=3500
+
+        response_text=""
+
+        if gemini_client:
+            try:
+                response_task=asyncio.to_thread(
+                    gemini_client.models.generate_content,
+                    model="gemini-2.5-flash",
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM_WELLNESS_PROMPT,
+                        temperature=.98,
+                        max_output_tokens=max_tokens
+                    )
+                )
+                gemini_response=await asyncio.wait_for(response_task,timeout=20.0)
+                response_text=gemini_response.text or ""
+            except Exception:
+                response_text=""
+
+        if not response_text and openai_client:
+            try:
+                openai_task=asyncio.to_thread(
+                    openai_client.chat.completions.create,
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role":"system","content":SYSTEM_WELLNESS_PROMPT},
+                        {"role":"user","content":prompt}
+                    ],
+                    temperature=.98,
+                    max_tokens=max_tokens
+                )
+                openai_response=await asyncio.wait_for(openai_task,timeout=20.0)
+                response_text=openai_response.choices[0].message.content or ""
+            except Exception:
+                response_text=""
+
+        if not response_text or (not is_hook and len(response_text)<400):
+            if is_hook:
+                response_text={
+                    "es":"Bienvenido a AL CIELO. Adopte una postura cómoda, inhale lentamente por la nariz y deje que sus hombros se relajen suavemente.",
+                    "en":"Welcome to AL CIELO. Get comfortable, breathe in slowly through your nose, and gently let your shoulders relax.",
+                    "pt":"Bem-vindo ao AL CIELO. Fique confortável, inspire lentamente pelo nariz e deixe seus ombros relaxarem suavemente."
+                }[language]
+            else:
+                response_text=fallback_session(device_id,language)
+
         return {
             "status":"success",
-            "authorized":authorized(device_id),
+            "session_content":response_text,
             "language":language,
-            "source":"hook",
-            "session":session,
-            "session_content":session_text(session),
-            "speech_rule":"Leer solamente instruction. Nunca leer title.",
-            "timing_rule":"Los 6 segundos comienzan solamente después de terminar completamente la lectura del párrafo."
+            "source":"ai" if response_text and not (not is_hook and len(response_text)<400) else "backup"
         }
 
-    if not authorized(device_id):
-        return JSONResponse(
-            {
-                "status":"payment_required",
-                "authorized":False,
-                "message":"Se requiere acceso."
-            },
-            status_code=402
-        )
-
-    session=await generate_gemini(language)
-    source="gemini"
-
-    if session is None:
-        session=await generate_openai(language)
-        source="openai"
-
-    if session is None:
-        session=fallback_session(device_id,language)
-        source="backup"
-
-    return {
-        "status":"success",
-        "authorized":True,
-        "language":language,
-        "source":source,
-        "session":session,
-        "session_content":session_text(session),
-        "speech_rule":"Leer solamente instruction. Nunca leer title.",
-        "timing_rule":"Los 6 segundos comienzan solamente después de terminar completamente la lectura del párrafo."
-    }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500,detail=str(e))
