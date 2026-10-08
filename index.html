@@ -37,6 +37,12 @@ h1{font-size:clamp(28px,6vw,46px);margin:4px 0 6px}
 .output{display:none;background:#020617;border:1px solid #475569;border-radius:9px;padding:17px;margin-top:10px}
 .output p{font-size:19px;line-height:1.8;margin:0 0 22px;color:#fff}
 .output p:last-child{margin-bottom:0}
+.relaxation{display:none;text-align:center;background:#020617;border:1px solid #475569;border-radius:9px;padding:14px;margin-top:14px}
+.relaxation h3{font-size:21px;margin:0 0 8px}
+.relaxation p{font-size:16px;line-height:1.5;color:#cbd5e1;margin:6px 0 12px}
+.relaxation-video{width:min(360px,100%);margin:0 auto 12px}
+.relaxation-video iframe{display:block;width:100%;height:202px;border:0;border-radius:8px;background:#000}
+.music-btn{width:100%;max-width:360px;min-height:52px;padding:10px 14px;border:0;border-radius:9px;background:#2563eb;color:#fff;font-size:17px;font-weight:700;cursor:pointer}
 .legal{font-size:13px;line-height:1.5;color:#94a3b8;text-align:center;margin:18px 0 0}
 @media(max-width:600px){
 .container{width:94%;padding-top:8px}
@@ -44,6 +50,7 @@ h1{font-size:clamp(28px,6vw,46px);margin:4px 0 6px}
 .card p{font-size:16px}
 .actions button{font-size:16px}
 .output p{font-size:18px}
+.relaxation-video iframe{height:190px}
 }
 </style>
 </head>
@@ -92,6 +99,15 @@ h1{font-size:clamp(28px,6vw,46px);margin:4px 0 6px}
 </div>
 <div id="status" class="status"></div>
 <div id="output" class="output"></div>
+
+<div id="relaxation" class="relaxation">
+<h3 id="relaxationTitle"></h3>
+<p id="relaxationText"></p>
+<div class="relaxation-video">
+<iframe id="relaxationFrame" title="Música de relajación" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>
+</div>
+<button id="musicBtn" class="music-btn" type="button" onclick="activarMusicaRelajacion()"></button>
+</div>
 </section>
 
 <section class="card">
@@ -110,6 +126,15 @@ const BASE_URL="https://al-cielo.onrender.com";
 const DEVICE_KEY="al_cielo_device_id";
 const LANGUAGE_KEY="al_cielo_language";
 const ESPERA_ENTRE_PARRAFOS=8000;
+
+const RELAXATION_VIDEOS=[
+"https://www.youtube.com/embed/TILgMsJA7zE",
+"https://www.youtube.com/embed/6Wugr0d3ObE",
+"https://www.youtube.com/embed/EaUQbQ2PL-4",
+"https://www.youtube.com/embed/yrO_H6ykcoI",
+"https://www.youtube.com/embed/dWVYt7RoZ2E"
+];
+
 let ultimoTextoGenerado="";
 let dispositivo="";
 let idiomaActual="es";
@@ -117,6 +142,9 @@ let vozActiva=false;
 let vozCancelada=false;
 let parrafosVoz=[];
 let indiceVoz=0;
+let musicaActual="";
+let musicaActiva=false;
+let temporizadorMusica=null;
 
 const T={
 es:{
@@ -152,7 +180,10 @@ sessionError:"No fue posible generar la sesión.",
 accessError:"No fue posible activar el acceso.",
 cleared:"La sesión actual fue limpiada. Sus respaldos y datos del dispositivo se mantienen.",
 noContent:"No hay contenido para reproducir.",
-adminActivated:"Acceso de cortesía activado."
+adminActivated:"Acceso de cortesía activado.",
+relaxationTitle:"Momento de relajación",
+relaxationText:"La sesión terminó. Si desea, puede ver y escuchar esta música tranquila.",
+music:"🎵 Escuchar música de relajación"
 },
 en:{
 subtitle:"Universal Wellness and Mobility for adults 50+",
@@ -187,7 +218,10 @@ sessionError:"The session could not be generated.",
 accessError:"Access could not be activated.",
 cleared:"The current session was cleared. Your backups and device data remain محفوظ.",
 noContent:"There is no content to play.",
-adminActivated:"Courtesy access activated."
+adminActivated:"Courtesy access activated.",
+relaxationTitle:"Relaxation Moment",
+relaxationText:"The session is finished. If you wish, you can watch and listen to this calming music.",
+music:"🎵 Listen to Relaxation Music"
 },
 pt:{
 subtitle:"Bem-estar e Mobilidade Universal para adultos 50+",
@@ -222,7 +256,10 @@ sessionError:"Não foi possível gerar a sessão.",
 accessError:"Não foi possível ativar o acesso.",
 cleared:"A sessão atual foi limpa. Seus backups e dados do dispositivo foram mantidos.",
 noContent:"Não há conteúdo para reproduzir.",
-adminActivated:"Acesso de cortesia ativado."
+adminActivated:"Acesso de cortesia ativado.",
+relaxationTitle:"Momento de relaxamento",
+relaxationText:"A sessão terminou. Se desejar, você pode assistir e ouvir esta música tranquila.",
+music:"🎵 Ouvir música de relaxamento"
 }
 };
 
@@ -250,6 +287,7 @@ aplicarIdioma();
 function cambiarIdiomaPantalla(){
 const nuevo=document.getElementById("language").value;
 if(nuevo!=="es"&&nuevo!=="en"&&nuevo!=="pt")return;
+detenerMusicaRelajacion();
 idiomaActual=nuevo;
 localStorage.setItem(LANGUAGE_KEY,idiomaActual);
 window.speechSynthesis.cancel();
@@ -284,7 +322,10 @@ pay:"payBtn",
 legal:"legal",
 courtesy:"courtesyBtn",
 user:"adminUser",
-password:"adminPass"
+password:"adminPass",
+relaxationTitle:"relaxationTitle",
+relaxationText:"relaxationText",
+music:"musicBtn"
 };
 Object.keys(mapa).forEach(k=>{
 const el=document.getElementById(mapa[k]);
@@ -339,11 +380,57 @@ output.appendChild(el);
 output.style.display=parrafos.length?"block":"none";
 }
 
+function ocultarMusicaRelajacion(){
+if(temporizadorMusica){
+clearTimeout(temporizadorMusica);
+temporizadorMusica=null;
+}
+detenerMusicaRelajacion();
+document.getElementById("relaxation").style.display="none";
+}
+
+function detenerMusicaRelajacion(){
+const frame=document.getElementById("relaxationFrame");
+if(frame)frame.src="";
+musicaActual="";
+musicaActiva=false;
+}
+
+function prepararVideoRelajacion(){
+const indice=Math.floor(Math.random()*RELAXATION_VIDEOS.length);
+musicaActual=RELAXATION_VIDEOS[indice];
+const frame=document.getElementById("relaxationFrame");
+frame.src=musicaActual+"?rel=0&playsinline=1";
+musicaActiva=false;
+}
+
+function mostrarMusicaRelajacion(){
+if(vozActiva||vozCancelada||!ultimoTextoGenerado)return;
+prepararVideoRelajacion();
+document.getElementById("relaxationTitle").textContent=t("relaxationTitle");
+document.getElementById("relaxationText").textContent=t("relaxationText");
+document.getElementById("musicBtn").textContent=t("music");
+document.getElementById("relaxation").style.display="block";
+}
+
+function activarMusicaRelajacion(){
+if(!musicaActual)return;
+const frame=document.getElementById("relaxationFrame");
+if(musicaActiva){
+frame.src=musicaActual+"?rel=0&playsinline=1";
+musicaActiva=false;
+return;
+}
+frame.src=musicaActual+"?autoplay=1&rel=0&playsinline=1";
+musicaActiva=true;
+}
+
 async function obtenerContenido(isHook){
 const status=document.getElementById("status");
 const btn=isHook?document.getElementById("sampleBtn"):document.getElementById("fullBtn");
 btn.disabled=true;
 status.textContent="";
+ocultarMusicaRelajacion();
 window.speechSynthesis.cancel();
 vozActiva=false;
 vozCancelada=true;
@@ -380,6 +467,12 @@ function hablarSiguienteParrafo(){
 if(!vozActiva||vozCancelada)return;
 if(indiceVoz>=parrafosVoz.length){
 vozActiva=false;
+if(ultimoTextoGenerado&&!vozCancelada){
+temporizadorMusica=setTimeout(()=>{
+temporizadorMusica=null;
+mostrarMusicaRelajacion();
+},ESPERA_ENTRE_PARRAFOS);
+}
 return;
 }
 const texto=parrafosVoz[indiceVoz++];
@@ -403,6 +496,7 @@ window.speechSynthesis.speak(u);
 
 function iniciarVozPorParrafos(){
 if(!ultimoTextoGenerado)return;
+ocultarMusicaRelajacion();
 window.speechSynthesis.cancel();
 vozCancelada=false;
 parrafosVoz=separarParrafos(ultimoTextoGenerado);
@@ -416,6 +510,7 @@ if(!ultimoTextoGenerado){
 document.getElementById("status").textContent=t("noContent");
 return;
 }
+ocultarMusicaRelajacion();
 if(window.speechSynthesis.speaking||vozActiva){
 window.speechSynthesis.cancel();
 vozActiva=false;
@@ -426,6 +521,12 @@ iniciarVozPorParrafos();
 }
 
 function limpiarPantallaSesion(){
+if(temporizadorMusica){
+clearTimeout(temporizadorMusica);
+temporizadorMusica=null;
+}
+detenerMusicaRelajacion();
+document.getElementById("relaxation").style.display="none";
 window.speechSynthesis.cancel();
 vozActiva=false;
 vozCancelada=true;
@@ -504,6 +605,7 @@ window.speechSynthesis.onvoiceschanged=()=>{};
 document.addEventListener("DOMContentLoaded",()=>{
 getDeviceId();
 cargarIdioma();
+ocultarMusicaRelajacion();
 comprobarRegresoDeStripe();
 });
 </script>
