@@ -580,7 +580,7 @@ Use simple human language.
 
 @app.get("/",response_class=HTMLResponse)
 async def home():
-    path=Path("static/index.html")
+    path=Path("index.html")
     if path.exists():
         return FileResponse(path)
     return HTMLResponse("<h1>AL CIELO</h1><p>Servicio disponible.</p>")
