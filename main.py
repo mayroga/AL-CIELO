@@ -1,4 +1,4 @@
-import os,sqlite3,random,asyncio
+import os,sqlite3,random,asyncio,re
 from fastapi import FastAPI,HTTPException,Request,Header
 from fastapi.responses import HTMLResponse,FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,7 +9,6 @@ import openai
 
 app=FastAPI(title="AL CIELO - Production Engine",version="3.9.3")
 app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_credentials=True,allow_methods=["*"],allow_headers=["*"])
-
 stripe.api_key=os.getenv("STRIPE_SECRET_KEY")
 STRIPE_PRICE_ID=os.getenv("STRIPE_PRICE_ID")
 STRIPE_WEBHOOK_SECRET=os.getenv("STRIPE_WEBHOOK_SECRET")
@@ -18,212 +17,1264 @@ ADMIN_PASS=os.getenv("ADMIN_PASS") or os.getenv("ADMIN_PASSWORD")
 BASE_URL="https://al-cielo.onrender.com"
 DB_FILE="alcielo_licences.db"
 
-try:
-    gemini_client=genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-except Exception:
-    gemini_client=None
-
+try: gemini_client=genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+except Exception: gemini_client=None
 openai_api_key=os.getenv("OPENAI_API_KEY")
 openai_client=openai.OpenAI(api_key=openai_api_key) if openai_api_key else None
 
 def get_db():
-    conn=sqlite3.connect(DB_FILE)
-    conn.row_factory=sqlite3.Row
-    return conn
+    conn=sqlite3.connect(DB_FILE);conn.row_factory=sqlite3.Row;return conn
 
 def init_db():
     conn=get_db()
-    conn.execute("""CREATE TABLE IF NOT EXISTS authorized_devices(
-        device_id TEXT PRIMARY KEY,
-        status TEXT NOT NULL DEFAULT 'active',
-        stripe_customer_id TEXT,
-        stripe_subscription_id TEXT,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS fallback_rotation(
-        device_id TEXT NOT NULL,
-        language TEXT NOT NULL,
-        position INTEGER NOT NULL DEFAULT 0,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY(device_id,language)
-    )""")
-    conn.commit()
-    conn.close()
+    conn.execute("""CREATE TABLE IF NOT EXISTS authorized_devices(device_id TEXT PRIMARY KEY,status TEXT NOT NULL DEFAULT 'active',stripe_customer_id TEXT,stripe_subscription_id TEXT,updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS fallback_rotation(device_id TEXT NOT NULL,language TEXT NOT NULL,position INTEGER NOT NULL DEFAULT 0,updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(device_id,language))""")
+    conn.commit();conn.close()
+init_db()
 
 def authorize_device(device_id,customer_id=None,subscription_id=None):
     if not device_id:return
     conn=get_db()
-    conn.execute("""INSERT INTO authorized_devices
-    (device_id,status,stripe_customer_id,stripe_subscription_id,updated_at)
-    VALUES(?,'active',?,?,CURRENT_TIMESTAMP)
-    ON CONFLICT(device_id) DO UPDATE SET
-    status='active',
-    stripe_customer_id=excluded.stripe_customer_id,
-    stripe_subscription_id=excluded.stripe_subscription_id,
-    updated_at=CURRENT_TIMESTAMP""",(device_id,customer_id,subscription_id))
-    conn.commit()
-    conn.close()
+    conn.execute("""INSERT INTO authorized_devices(device_id,status,stripe_customer_id,stripe_subscription_id,updated_at) VALUES(?,'active',?,?,CURRENT_TIMESTAMP) ON CONFLICT(device_id) DO UPDATE SET status='active',stripe_customer_id=excluded.stripe_customer_id,stripe_subscription_id=excluded.stripe_subscription_id,updated_at=CURRENT_TIMESTAMP""",(device_id,customer_id,subscription_id))
+    conn.commit();conn.close()
 
 def check_device_authorization(device_id):
     if not device_id:return False
-    conn=get_db()
-    row=conn.execute("SELECT status FROM authorized_devices WHERE device_id=?",(device_id,)).fetchone()
-    conn.close()
+    conn=get_db();row=conn.execute("SELECT status FROM authorized_devices WHERE device_id=?",(device_id,)).fetchone();conn.close()
     return bool(row and row["status"]=="active")
 
 def deactivate_device_by_subscription(subscription_id):
     if not subscription_id:return
-    conn=get_db()
-    conn.execute("UPDATE authorized_devices SET status='inactive',updated_at=CURRENT_TIMESTAMP WHERE stripe_subscription_id=?",(subscription_id,))
-    conn.commit()
-    conn.close()
+    conn=get_db();conn.execute("UPDATE authorized_devices SET status='inactive',updated_at=CURRENT_TIMESTAMP WHERE stripe_subscription_id=?",(subscription_id,));conn.commit();conn.close()
 
-def next_fallback_index(device_id,total):
-    if not device_id or total<=0:return 0
-    language="__all__"
-    conn=get_db()
-    row=conn.execute("SELECT position FROM fallback_rotation WHERE device_id=? AND language=?",(device_id,language)).fetchone()
+def next_fallback_index(device_id,language,total):
+    if total<=0:return 0
+    conn=get_db();rotation_language="__all__"
+    row=conn.execute("SELECT position FROM fallback_rotation WHERE device_id=? AND language=?",(device_id,rotation_language)).fetchone()
     if row is None:
         position=0
-        new_position=1%total
-        conn.execute("INSERT INTO fallback_rotation(device_id,language,position,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP)",(device_id,language,new_position))
+        conn.execute("""INSERT INTO fallback_rotation(device_id,language,position,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP)""",(device_id,rotation_language,1 if total>1 else 0))
     else:
-        position=int(row["position"])%total
-        new_position=(position+1)%total
-        conn.execute("UPDATE fallback_rotation SET position=?,updated_at=CURRENT_TIMESTAMP WHERE device_id=? AND language=?",(new_position,device_id,language))
-    conn.commit()
-    conn.close()
-    return position
+        position=int(row["position"])%total;new_position=(position+1)%total
+        conn.execute("""UPDATE fallback_rotation SET position=?,updated_at=CURRENT_TIMESTAMP WHERE device_id=? AND language=?""",(new_position,device_id,rotation_language))
+    conn.commit();conn.close();return position
 
-init_db()
+SYSTEM_WELLNESS_PROMPT="""You are the exclusive, professional human-like wellness coach and lifestyle companion for the platform "AL CIELO", designed for adults aged 50 and over, encompassing active individuals, seated, resting, or poststrated in bed, including those with limited mobility or missing limbs.
+Your tone must be warm, direct, calm, compassionate, and conversational.
 
-SYSTEM_WELLNESS_PROMPT="""
-You are the exclusive professional human-like wellness coach and lifestyle companion for AL CIELO, designed for adults aged 50 and over, including active people, seated people, resting people, people remaining in bed, people with limited mobility, and people with missing limbs.
-Your tone must be warm, direct, calm, compassionate and conversational.
-
-STRICT RULES:
-1. Never mention phase, fase, auditoría, IA, AI, ChatGPT, Gemini, OpenAI or internal technology.
-2. Never use medical terminology, clinical terminology, diagnosis, treatment, therapy or medical authority.
-3. Never repeat the exact same session twice. Vary wording, sequence, focus and guidance.
-4. Never include IDs, codes, technical tags or internal information.
-5. For a free preview, provide only a short warm greeting and one simple breathing action.
-6. For a full session, provide an extensive guided wellness and lifestyle session intended to take approximately 10 minutes when spoken slowly.
-7. Instructions must be inclusive. A person may be seated, resting, in bed, have limited mobility or have missing limbs. Never require a movement that the person cannot comfortably perform. When appropriate, offer an alternative such as imagining the movement or focusing on available movement.
-8. Output ONLY the requested language.
-9. Do not include headings, titles, labels or numbered sections inside the spoken session.
-10. Separate natural paragraphs with a blank line between paragraphs.
-11. Do not mix languages.
+STRICT LEGAL & OPERATIONAL RULES:
+1. NEVER mention words like "phase", "fase", "auditoría", "IA", or "ChatGPT". Be purely action-oriented and professional.
+2. NEVER use medical terminology, clinical terms, diagnoses, or anything implying medical treatment or authority. This is strictly a lifestyle, comfort, relaxation, and physical wellbeing guidance service.
+3. NEVER repeat the exact same session twice. Always introduce fresh phrasing, varied exercises, and unique restorative focuses while maintaining absolute safety.
+4. NEVER include internal ID numbers, random codes, or technical tags in the text output.
+5. IF THIS IS A FREE 30-SECOND PREVIEW:
+   - Provide a quick, light greeting and a single simple breathing action.
+6. IF THIS IS THE FULL SESSION:
+   - Act as a live personal wellness trainer.
+   - Use many short, separate spoken instructions instead of long paragraphs.
+   - Each instruction must contain preferably one action or one simple idea.
+   - After one action, leave a natural pause before the next action.
+   - Never combine several exercises or commands into one long sentence.
+   - Use blank lines between instruction units.
+   - Include inclusive instructions for people with limited mobility or missing limbs.
+   - If a movement is not possible, offer a comfortable mental visualization or use only available movement.
+7. The COMPLETE response must be ONLY in the selected language.
+8. NEVER mix Spanish, English, Portuguese, or any other language.
+9. Do not place headings, titles, labels, numbers, codes, or technical markers inside the spoken session.
+10. Preserve clear paragraph breaks. Each paragraph must be short enough to be spoken as one direct instruction or one brief piece of guidance.
 """
 
 FALLBACK_SESSIONS_ES=[
-"Bienvenido a su espacio personal de bienestar y armonía diaria. Tómese un instante para acomodarse con absoluta comodidad, ya sea sentado plácidamente en su sillón favorito o descansando de forma reposada en su cama. Vamos a comenzar este momento de pausa centrando toda nuestra atención en el ritmo natural de la respiración. Sienta cómo el aire fresco ingresa suavemente a través de su nariz, recorre su interior y sale despacio. Permita que sus hombros desciendan de manera completamente natural, soltando el peso de la jornada y encontrando un punto de apoyo firme y seguro en la superficie que lo sostiene. Si le es posible y cuenta con movilidad en sus manos y dedos, hágalo de forma sumamente pausada, disfrutando del tacto y la presencia de su propio cuerpo. Si prefiere el reposo absoluto o la quietud, acompañe este proceso sintiendo el calor y el equilibrio de su postura. Inhale despacio contando mentalmente hasta cuatro y exhale con suavidad mientras recorre este momento de calma. Permítase desconectarse de las distracciones externas y habitar este presente lleno de tranquilidad. Su postura debe sentirse cómoda, sin forzar absolutamente nada. Continúe manteniendo este flujo de aire constante, notando cómo cada exhalación regala una sensación de descanso renovador.",
-"Comenzamos este momento especial dedicado enteramente a su descanso, equilibrio físico y confort cotidiano. Ubíquese en la posición que hoy le brinde mayor seguridad y bienestar general. Vamos a dirigir la atención hacia el área del cuello y la cabeza, realizando un movimiento imperceptible y muy delicado de lado a lado solo si su cuerpo se lo permite de manera natural, o bien visualizando ese movimiento con total serenidad en su mente. Sienta cómo la mandíbula se afloja, cómo la frente se despeja y cómo la expresión del rostro se vuelve apacible. Tome el control consciente del ritmo de la respiración: inhale profundamente, mantenga el aire con suavidad y exhale muy despacio. Si se encuentra recostado o descansando en su cama, sienta el soporte completo de su espalda y permita que los brazos reposen cómodamente. Mantenga esta cadencia pausada, permitiendo que el tiempo transcurra sin prisa.",
-"Un cordial saludo en esta nueva sesión de cuidado personal y bienestar. Conéctese con su comodidad adoptando una postura que le ofrezca un soporte firme, relajado y completamente seguro. Hoy centraremos nuestra atención en la apertura del pecho y en la expansión de una respiración amplia y fluida. Si tiene movilidad en sus brazos, deslícelos con delicadeza hacia una posición de mayor comodidad; de lo contrario, concéntrese en percibir la expansión y contracción natural del cuerpo al compás del aire. Note el punto exacto de contacto de su espalda con el respaldo o la superficie de descanso. Cada exhalación representa una oportunidad para soltar las preocupaciones cotidianas. Mantenga su mente enfocada en este instante presente y siga respirando de manera lenta.",
-"Le damos la más cordial bienvenida a su pausa activa y restaurativa de hoy. Sin importar si se encuentra realizando sus actividades, sentado con comodidad o descansando en cama, la prioridad absoluta es su confort. Lleve una suave conciencia hacia los puntos de apoyo principales de su cuerpo, reconociendo el espacio físico que habita con tranquilidad. Perciba el ritmo calmado de su respiración, acompañándolo con respiraciones largas y sin exigencia. Si le es posible dentro de su comodidad actual, mueva muy suavemente las muñecas o los dedos; si prefiere la quietud, permita que la imaginación y la respiración consciente acompañen el momento. Permítase permanecer en esta atmósfera de tranquilidad, donde el objetivo es su bienestar y comodidad.",
-"Iniciamos este momento de profunda conexión con su bienestar personal y equilibrio. Acomódese con absoluta libertad y cierre los ojos si le apetece. Vamos a relajar suavemente la parte superior del cuerpo. Relaje los músculos de la cara, separe ligeramente los dientes, deje caer los hombros y respire profundamente. Si alguna zona corporal presenta limitaciones de movimiento, no la fuerce; simplemente obsérvela con aceptación y continúe respirando. Sienta cómo una sensación de bienestar recorre su cuerpo. Este espacio está pensado para brindarle estabilidad y tranquilidad. Siga disfrutando de este compás pausado, sabiendo que cada inhalación y cada exhalación pueden acompañar su sensación de descanso.",
-"Bienvenido a su rutina de relajación y movimiento adaptado para el bienestar general. Tome aire de manera natural, profunda y dosificada. Vamos a realizar un recorrido mental consciente por todo su cuerpo, reconociendo cada parte con afecto y respeto por su estado actual. Si posee movilidad en sus extremidades, realice pequeños movimientos sumamente lentos; si se encuentra en reposo, imagine ese movimiento fluyendo con armonía. Mantenga una respiración constante, disfrutando del silencio y de la seguridad de este entorno. Permanezca receptivo a esta sensación de descanso, dejando que el cuerpo encuentre su propia naturalidad sin prisas ni presiones.",
-"Es un verdadero placer acompañarle en este espacio de bienestar creado para su comodidad. Sintonice con el momento presente ajustando su postura hasta hallar el punto exacto de reposo. Enfoque la atención en el centro de su cuerpo, permitiendo que cada inhalación traiga una sensación agradable y que cada exhalación se lleve cualquier tensión superficial. Mantenga los brazos y las piernas en la posición que hoy le otorgue mayor comodidad. Este tiempo le pertenece por completo. Sienta el respaldo que lo sostiene y entregue el peso de su cuerpo a la superficie con confianza. Continúe respirando lento y profundo mientras acompañamos cada instante con serenidad.",
-"Comenzamos una nueva práctica enfocada en su paz interior, estabilidad y confort físico general. Adopte una postura que le proporcione un soporte óptimo y seguridad. Vamos a relajar paulatinamente los dedos de las manos, los brazos y el cuerpo mediante respiraciones profundas y pausadas. Si alguna extremidad carece de movimiento, recuerde que puede concentrarse en la respiración o imaginar el movimiento. Permítase desconectarse temporalmente del exterior y habitar este instante de tranquilidad. Cada ciclo de aire puede acompañar una sensación de renovación. Disfrute de la estabilidad y la paz que este espacio le ofrece.",
-"Bienvenido a su sesión de revitalización, descanso y equilibrio. Busque la postura más cómoda disponible. Dirigiremos la atención hacia los hombros y la parte alta de la espalda, imaginando que una brisa ligera y cálida disuelve cualquier rigidez presente. Tome una inspiración profunda, llene sus pulmones sin prisa y deje salir el aire lentamente. Sienta cómo el cuerpo se afloja y se entrega a un descanso tranquilo. Mantenga siempre una práctica segura, libre de exigencias y adaptada enteramente a su ritmo. Siga respirando de este modo, permitiendo que la tranquilidad acompañe su mente y su cuerpo.",
-"Cerramos nuestro ciclo de recomendaciones de bienestar con una sesión centrada en la serenidad y el confort. Acomódese con la certeza de que este tiempo le pertenece. Vamos a unificar la respiración con pequeños movimientos conscientes o con una visualización profunda de ligereza y bienestar. Sienta el soporte que lo sostiene, relaje cada músculo del rostro y permita que el aire fluya naturalmente. Disfrute de la estabilidad y la paz que este espacio proporciona. Permanezca unos instantes disfrutando de esta sensación. Inhale profundamente y prepárese para continuar su día con una renovada sensación de tranquilidad.",
-"Iniciamos un nuevo espacio dedicado por completo a su bienestar cotidiano y a la relajación tranquila. Adopte una postura agradable. Lleve su mente hacia las manos, imaginando una sensación agradable de calor. Si descansa en cama, permita que el colchón soporte enteramente su peso. Realice una inspiración lenta, sintiendo cómo el abdomen se mueve suavemente, y al expirar deje que cualquier preocupación se aleje. Esta práctica está diseñada para propiciar un remanso de paz en medio de su jornada. Permita que la tranquilidad le envuelva por completo.",
-"Le damos la bienvenida a esta sesión orientada al equilibrio y la distensión. Ajuste su posición corporal para garantizar que cuello, espalda y extremidades se encuentren cómodamente respaldados. Concentre su atención en el simple acto de respirar. Perciba la temperatura del aire al entrar y la sensación al salir. Si nota tensión en el rostro o en la mandíbula, relájela suavemente. Cada inhalación puede acompañar una sensación de serenidad y cada exhalación una sensación de estabilidad. Disfrute de este tiempo de cuidado y descanso.",
-"Comenzamos una pausa restaurativa centrada en el alivio y la comodidad. Relaje los brazos a los lados de su cuerpo o sobre su regazo de la manera más cómoda posible. Visualice una suave onda de bienestar que desciende lentamente por el cuerpo, dejando atrás la rigidez. Acompañe este recorrido mental con respiraciones rítmicas, profundas y calmadas. Evite cualquier prisa o exigencia. Este espacio es suyo para descansar, encontrar tranquilidad y disfrutar de comodidad.",
-"Saludamos este instante de pausa y armonía enfocado en su bienestar personal. Conéctese con la firmeza del suelo, la silla o la cama que sostiene su cuerpo. Permita que la respiración se vuelva cada vez más lenta y profunda. Si lo prefiere, mantenga los ojos cerrados mientras su atención descansa en el flujo constante del aire. Disfrute de la estabilidad y el sosiego que esta práctica puede ofrecer.",
-"Nos adentramos en una sesión pensada para brindarle un respiro profundo y una sensación de distensión. Colóquese en la postura que le aporte mayor comodidad. Dirija su atención hacia la espalda y los hombros, permitiendo que el peso sea recibido por la superficie de apoyo. Respire con absoluta calma, llenando este momento de tranquilidad y ligereza. Este es su momento para permanecer en el presente con seguridad.",
-"Bienvenido a este momento de armonización y cuidado de su estilo de vida. Tome una posición que le permita relajarse cómodamente. Inhale aire fresco con tranquilidad, permanezca un instante sin esfuerzo y expúlselo lentamente. Permita que la quietud fortalezca su sensación de paz. Disfrute plenamente de cada minuto de este descanso.",
-"Iniciamos una práctica destinada a cultivar el confort, el equilibrio y la paz en su día a día. Sienta el soporte de la almohada o del respaldo adaptándose a su cuerpo. Realice respiraciones profundas y pausadas, centrando la atención en el bienestar que surge al soltar las tensiones cotidianas. Disfrute de este espacio exclusivo de tranquilidad y permita que su energía se renueve naturalmente.",
-"Comenzamos un espacio de descanso y relajación profunda para acompañar su rutina de bienestar. Adopte una postura cómoda, libre de presiones y exigencias. Sienta el flujo rítmico de su respiración y cómo cada ciclo puede aportar una mayor sensación de ligereza y estabilidad. Permanezca en este refugio de paz, disfrutando del silencio y de una total comodidad.",
-"Le saludamos en esta sesión de pausa y armonía diseñada para su confort diario. Ubíquese en el sitio que le ofrezca mayor apoyo y bienestar. Conecte con su respiración natural, permitiendo que el aire entre y salga de manera apacible y constante. Disfrute de este momento de tregua, estabilidad y cuidado personal sin prisas.",
-"Finalizamos nuestro repertorio de bienestar con una sesión orientada al equilibrio y la paz interior. Acomódese con la certeza de que este tiempo es suyo. Respire profundamente, relaje los músculos del rostro y entregue su peso corporal a la superficie con confianza y serenidad. Disfrute de esta sensación de plenitud y prepárese para continuar su jornada con armonía."
-]
+"""Bienvenido a su espacio personal de bienestar y armonía diaria.
 
-FALLBACK_SESSIONS_EN=[
-"Welcome to your personal space for daily wellness and harmony. Take a moment to make yourself completely comfortable, whether you are sitting peacefully in your favorite chair or resting comfortably in bed. We will begin by bringing our attention to the natural rhythm of your breathing. Feel the air gently enter through your nose and slowly leave your body. Allow your shoulders to drop naturally and let the surface supporting you carry your weight. If you have comfortable movement in your hands and fingers, move them very slowly. If you prefer complete stillness, simply notice the comfort of your position. Breathe in slowly and breathe out gently. Allow yourself to step away from outside distractions and remain in this peaceful moment. Your position should feel comfortable, without forcing anything. Continue this steady breathing and notice how each exhalation can bring a renewed sense of rest.",
-"We begin this special moment dedicated entirely to your rest, balance and everyday comfort. Choose the position that gives you the greatest sense of safety and comfort today. Bring your attention toward your neck and head. If it feels comfortable, make a very small and gentle movement from side to side, or simply imagine that movement in your mind. Let your jaw relax and allow your face to become calm. Now follow your breathing: breathe in slowly, pause gently and breathe out slowly. If you are resting in bed, notice the support beneath your back and head and allow your arms to rest comfortably. Continue with this calm rhythm and allow time to pass without hurry.",
-"Warm greetings in this new personal wellness session. Find a comfortable position with firm and safe support. Today we will bring attention to the natural opening and closing of the chest as you breathe. If you have comfortable movement in your arms, move them gently toward a more relaxed position. If you do not, simply notice the natural movement of your body while breathing. Notice where your back meets the chair or resting surface. Each exhalation is an opportunity to let the concerns of the day move farther away. Keep your attention in the present moment and continue breathing slowly.",
-"Welcome to your active and restorative pause today. Whether you are active, comfortably seated or resting in bed, your comfort comes first. Notice the main areas supporting your body, such as your back, legs or arms. Breathe slowly and comfortably without demanding anything from yourself. If it feels comfortable, make very small movements with your wrists or fingers. If you prefer stillness, simply imagine the movement while continuing to breathe. Allow yourself to remain in this calm atmosphere. The purpose of this moment is your comfort and well-being.",
-"We begin this moment of connection with your personal comfort and well-being. Make yourself comfortable and close your eyes if you wish. We will gently relax the upper part of the body. Relax your face, separate your teeth slightly, let your shoulders move away from your ears and breathe slowly. If any part of your body has limited movement, do not force it. Simply notice it calmly and continue breathing. Imagine a comfortable sense of ease moving through your body. This space is here to offer you calm and stability. Continue at this peaceful pace, allowing each breath to accompany your rest.",
-"Welcome to your relaxation and adapted movement routine for general well-being. Breathe naturally and calmly, allowing your abdomen to move freely. Take a gentle mental journey through your body, noticing each area with respect for your current situation. If you have comfortable movement in your limbs, make very small and slow movements. If you are resting, imagine those movements gently in your mind. Keep your breathing steady and enjoy the quiet. Remain open to the feeling of rest and allow your body to find its own comfortable rhythm without pressure.",
-"It is a pleasure to accompany you in this wellness space created for your comfort. Adjust your position until you find a pleasant place to rest. Bring your attention to the center of your body and notice each breath. Keep your arms and legs in whatever position feels most comfortable today. This time belongs to you. Feel the support beneath you and allow your body weight to rest on that surface. Continue breathing slowly while we remain together in a moment of calm, harmony and respect for your comfort.",
-"We begin a new practice focused on your inner peace, stability and physical comfort. Choose a position that gives you good support and a sense of safety. Slowly relax your fingers, arms and body through calm breathing. If any limb does not move, simply focus on your breathing or imagine a comfortable movement. Allow yourself to temporarily step away from outside distractions. Each breathing cycle can accompany a sense of renewal while you remain seated or resting. Enjoy the stability and peace of this moment.",
-"Welcome to your session of renewal, rest and balance. Find the most comfortable position available to you. Bring your attention to your shoulders and upper back, imagining a gentle warm breeze easing any sense of stiffness. Take a deep but comfortable breath and slowly let the air leave your body. Feel yourself becoming more relaxed and allow the supporting surface to carry your weight. Keep everything comfortable and free from pressure. This is a valuable moment of rest from the demands of the day. Continue breathing calmly and allow the peaceful feeling to remain with you.",
-"We close this cycle of wellness recommendations with a session centered on calm and comfort. Settle into your position knowing that this time belongs to you. Combine your breathing with small comfortable movements or simply imagine a feeling of lightness. Feel the support beneath you, relax your face and allow the air to move naturally. Enjoy the stability and peace of this moment. Remain here for a few quiet breaths. Take one final comfortable breath and prepare to continue your day with a renewed sense of calm.",
-"We begin a new space dedicated completely to your everyday well-being and quiet relaxation. Choose a pleasant position. Bring your attention to your hands and imagine a comfortable warmth moving through them. If you are resting in bed, allow the mattress to fully support your weight. Breathe in slowly and notice the gentle movement of your abdomen. As you breathe out, allow any concern to move farther away. This practice creates a peaceful pause in the middle of your day. Let the calm atmosphere surround you.",
-"Welcome to this session focused on balance and relaxation. Adjust your position so your neck, back and arms or legs are comfortably supported. Bring your attention to the simple act of breathing. Notice the temperature of the air as it enters and the sensation as it leaves. If you notice tension in your face or jaw, gently relax it. Each breath can accompany a greater sense of calm and stability. Enjoy this time of personal care and rest.",
-"We begin a restorative pause centered on comfort. Let your arms rest beside your body or on your lap in the most comfortable position available. Imagine a gentle wave of well-being moving slowly through your body and leaving stiffness behind. Follow this image with calm, steady breathing. Avoid rushing or demanding anything from yourself. This space is yours to rest, regain energy and enjoy comfort.",
-"We welcome this moment of pause and harmony dedicated to your well-being. Notice the support of the floor, chair or bed beneath you. Allow your breathing to become slower and calmer, giving your attention a steady point to follow. If you wish, close your eyes while you notice the steady movement of the air. Enjoy the stability and quiet of this moment.",
-"We enter a session designed to give you a deep breath and a comfortable sense of relaxation. Choose the position that gives you the greatest comfort. Bring your attention to your back and shoulders and allow the surface beneath you to receive your weight. Breathe calmly and fill this moment with peace and lightness. This is your time to remain present with comfort and safety.",
-"Welcome to this moment of harmony and lifestyle care. Choose a position that allows you to relax comfortably. Breathe in fresh air calmly, pause for a moment without effort and slowly breathe out. Allow the quiet around you to support your sense of peace. Enjoy every minute of this restful moment.",
-"We begin a practice intended to cultivate comfort, balance and peace in your day. Feel the support of your pillow, bed or chair adapting to your body. Breathe deeply and calmly while focusing your attention on the comfortable feeling that comes when everyday tension is released. Enjoy this private space of quiet and allow your energy to renew naturally.",
-"We begin a space of deep rest and relaxation to accompany your wellness routine. Choose a comfortable position without pressure or demands. Notice the rhythm of your breathing and how each cycle can bring a greater sense of lightness and inner stability. Remain in this peaceful space and enjoy the quiet and physical comfort.",
-"We welcome you to this pause and harmony session created for your everyday comfort. Find the place that gives you the greatest support and well-being. Connect with your natural breathing and allow each breath to enter and leave calmly. Enjoy this moment of pause, stability and personal care without rushing.",
-"We finish our collection of wellness sessions with a moment dedicated to balance and inner peace. Settle comfortably knowing that this time belongs to you. Breathe deeply, relax the muscles of your face and allow the surface beneath you to support your body with confidence. Enjoy this sense of calm and prepare to continue your day with greater harmony."
+Acomódese con absoluta comodidad, ya sea sentado o descansando en su cama.
+
+Sienta el apoyo de la superficie que sostiene su cuerpo.
+
+Inhale lentamente por la nariz.
+
+Exhale suavemente.
+
+Deje que sus hombros bajen de manera natural.
+
+Permita que su rostro se relaje.
+
+Si puede mover las manos y los dedos, hágalo muy lentamente.
+
+Si prefiere permanecer quieto, simplemente imagine ese movimiento.
+
+Continúe respirando con calma.
+
+Permítase permanecer unos instantes en este momento de tranquilidad.""",
+"""Comenzamos este momento especial dedicado a su descanso, equilibrio y comodidad cotidiana.
+
+Adopte la posición que le resulte más segura y agradable.
+
+Dirija suavemente su atención hacia el cuello.
+
+Si puede hacerlo cómodamente, gire muy poco la cabeza hacia un lado.
+
+Regrese lentamente al centro.
+
+Ahora mire suavemente hacia el otro lado.
+
+Si no desea mover la cabeza, imagine el movimiento.
+
+Relaje la mandíbula.
+
+Suavice la expresión de su rostro.
+
+Inhale despacio.
+
+Exhale lentamente.
+
+Permanezca tranquilo durante unos instantes.""",
+"""Le damos la bienvenida a esta nueva sesión de bienestar.
+
+Encuentre una posición que le proporcione buen apoyo.
+
+Observe cómo su espalda descansa sobre la silla o la cama.
+
+Inhale lentamente.
+
+Sienta cómo el pecho se mueve de manera natural.
+
+Exhale sin prisa.
+
+Si tiene movilidad en los brazos, muévalos suavemente hacia una posición cómoda.
+
+Si no puede hacerlo, simplemente imagine ese movimiento.
+
+Deje que los hombros descansen.
+
+Mantenga su atención en este momento.
+
+Respire lentamente y continúe con tranquilidad.""",
+"""Bienvenido a su pausa de hoy.
+
+No importa si está activo, sentado o descansando en la cama.
+
+Lo primero es encontrar comodidad.
+
+Sienta los puntos donde su cuerpo recibe apoyo.
+
+Observe sus piernas.
+
+Observe sus brazos.
+
+Respire lentamente.
+
+Si le resulta agradable, mueva suavemente los dedos de las manos.
+
+También puede mover ligeramente los pies si puede hacerlo con comodidad.
+
+Si prefiere permanecer quieto, imagine esos pequeños movimientos.
+
+No fuerce ninguna parte de su cuerpo.
+
+Continúe respirando con serenidad.""",
+"""Comenzamos este momento dedicado a su bienestar personal.
+
+Acomódese libremente.
+
+Cierre los ojos si desea hacerlo.
+
+Relaje el rostro.
+
+Separe ligeramente los dientes.
+
+Deje caer los hombros.
+
+Inhale lentamente.
+
+Exhale con suavidad.
+
+Si alguna parte de su cuerpo tiene poco movimiento, no la fuerce.
+
+Simplemente perciba esa zona.
+
+Continúe respirando tranquilamente.
+
+Permita que este momento sea solamente suyo.""",
+"""Bienvenido a su rutina de relajación y movimiento adaptado.
+
+Respire de manera natural.
+
+Observe cómo se mueve suavemente el abdomen al respirar.
+
+Recorra mentalmente su cuerpo desde la cabeza hasta los pies.
+
+Reconozca cada parte con respeto.
+
+Si tiene movilidad en las manos, haga pequeños movimientos circulares.
+
+Hágalos muy lentamente.
+
+Si está en reposo, imagine esos movimientos.
+
+Mantenga una respiración tranquila.
+
+Permita que su cuerpo encuentre su propio ritmo.
+
+Continúe sin prisa.""",
+"""Es un placer acompañarle en este espacio de bienestar.
+
+Ajuste su posición hasta encontrar un punto agradable de descanso.
+
+Sienta el apoyo que recibe su cuerpo.
+
+Inhale lentamente.
+
+Exhale suavemente.
+
+Mantenga los brazos y las piernas en la posición más cómoda para usted.
+
+No necesita hacer ningún movimiento que resulte incómodo.
+
+Permita que el peso de su cuerpo descanse sobre la superficie.
+
+Continúe respirando lentamente.
+
+Permanezca tranquilo unos instantes.""",
+"""Comenzamos una nueva práctica dedicada a su paz y comodidad.
+
+Adopte una posición con buen apoyo.
+
+Sienta que está seguro y cómodo.
+
+Relaje lentamente los dedos de las manos si puede moverlos.
+
+Relaje los brazos.
+
+Si alguna parte del cuerpo no tiene movimiento, no intente forzarla.
+
+Concéntrese en su respiración.
+
+Imagine un movimiento suave y cómodo.
+
+Inhale lentamente.
+
+Exhale lentamente.
+
+Permita que la calma permanezca con usted.""",
+"""Bienvenido a su sesión de descanso y equilibrio.
+
+Encuentre la posición más cómoda disponible para usted.
+
+Dirija su atención hacia los hombros.
+
+Observe la parte superior de su espalda.
+
+Imagine una brisa suave pasando por esa zona.
+
+Inhale profundamente sin esfuerzo.
+
+Exhale lentamente.
+
+Sienta cómo su cuerpo se entrega al apoyo que lo sostiene.
+
+No apresure ningún movimiento.
+
+Permanezca cómodo.
+
+Continúe respirando con tranquilidad.""",
+"""Llegamos a un momento de serenidad y confort.
+
+Acomódese sabiendo que este tiempo le pertenece.
+
+Respire lentamente.
+
+Si puede realizar pequeños movimientos cómodos, hágalos sin prisa.
+
+Si no desea moverse, imagine una sensación de ligereza.
+
+Relaje el rostro.
+
+Sienta el apoyo debajo de su cuerpo.
+
+Inhale una vez más.
+
+Exhale lentamente.
+
+Permanezca unos instantes disfrutando de esta tranquilidad.""",
+"""Iniciamos un nuevo espacio dedicado a su bienestar cotidiano.
+
+Adopte una posición agradable.
+
+Dirija su atención hacia las manos.
+
+Si puede moverlas, permita que los dedos se relajen.
+
+Si no puede moverlos, simplemente imagine una agradable sensación de calor.
+
+Si está descansando en cama, permita que la superficie sostenga su peso.
+
+Inhale lentamente.
+
+Exhale y deje que cualquier preocupación quede un poco más lejos.
+
+Permanezca tranquilo.
+
+Disfrute de este momento.""",
+"""Bienvenido a esta sesión de equilibrio y relajación.
+
+Ajuste su posición para sentirse cómodo.
+
+Sienta el apoyo de su cuello.
+
+Sienta el apoyo de su espalda.
+
+Permita que sus brazos y piernas descansen.
+
+Concéntrese en el simple acto de respirar.
+
+Perciba el aire al entrar.
+
+Perciba el aire al salir.
+
+Relaje suavemente el rostro.
+
+Suelte la mandíbula.
+
+Continúe respirando con calma.""",
+"""Comenzamos una pausa restauradora centrada en su comodidad.
+
+Coloque los brazos de la manera que le resulte más agradable.
+
+Siéntalos descansar sobre su regazo o junto al cuerpo.
+
+Imagine una sensación suave recorriendo lentamente su cuerpo.
+
+Acompañe esa imagen con una respiración tranquila.
+
+Inhale despacio.
+
+Exhale lentamente.
+
+No tenga prisa.
+
+Permita que este espacio sea suyo.
+
+Continúe descansando con serenidad.""",
+"""Saludamos este instante de pausa y armonía.
+
+Sienta la superficie que sostiene su cuerpo.
+
+Puede ser una silla, un sillón o una cama.
+
+Permita que la respiración se vuelva lenta.
+
+Inhale con tranquilidad.
+
+Exhale suavemente.
+
+Mantenga su atención en el aire que entra y sale.
+
+Si desea cerrar los ojos, puede hacerlo.
+
+Permanezca cómodo.
+
+Disfrute de unos instantes de sosiego.""",
+"""Entramos en una sesión pensada para ofrecerle descanso y tranquilidad.
+
+Colóquese en la posición que le aporte mayor comodidad.
+
+Dirija su atención hacia la espalda.
+
+Observe sus hombros.
+
+Permita que el peso de su cuerpo descanse sobre la superficie.
+
+Respire con calma.
+
+Inhale lentamente.
+
+Exhale suavemente.
+
+Imagine que cada respiración le permite soltar un poco de tensión cotidiana.
+
+Permanezca en el presente.
+
+Continúe con serenidad.""",
+"""Bienvenido a este momento de armonía y cuidado de su estilo de vida.
+
+Encuentre una posición cómoda.
+
+Permita que su espalda descanse.
+
+Inhale aire lentamente.
+
+Mantenga el aire un instante sin esfuerzo.
+
+Exhale despacio.
+
+Deje que cualquier rigidez se reduzca de manera natural.
+
+No necesita apresurarse.
+
+Disfrute del silencio.
+
+Continúe respirando tranquilamente.""",
+"""Iniciamos una práctica destinada al confort y la paz de su día.
+
+Sienta el apoyo de la almohada, la cama o el respaldo.
+
+Acomode su cuerpo de la manera que le resulte más agradable.
+
+Respire profundamente pero sin esfuerzo.
+
+Observe cómo se siente al soltar las tensiones del día.
+
+Relaje los hombros.
+
+Relaje el rostro.
+
+Permanezca cómodo.
+
+Deje que la tranquilidad acompañe cada respiración.""",
+"""Comenzamos un espacio de descanso y relajación.
+
+Adopte una postura cómoda y libre de presión.
+
+Sienta el ritmo natural de su respiración.
+
+Inhale lentamente.
+
+Exhale lentamente.
+
+Observe cómo cada respiración puede traer una sensación de ligereza.
+
+No necesita hacer nada más.
+
+Permanezca en esta posición.
+
+Disfrute del silencio y del apoyo que recibe su cuerpo.
+
+Continúe respirando con tranquilidad.""",
+"""Finalizamos este repertorio de bienestar con un momento dedicado al equilibrio y la paz.
+
+Acomódese con la certeza de que este tiempo es suyo.
+
+Sienta la superficie que sostiene su cuerpo.
+
+Relaje el rostro.
+
+Respire profundamente sin esfuerzo.
+
+Exhale lentamente.
+
+Deje descansar sus hombros.
+
+Permanezca unos instantes en calma.
+
+Cuando esté preparado, continúe su jornada lentamente y con tranquilidad."""
 ]
 
 FALLBACK_SESSIONS_PT=[
-"Bem-vindo ao seu espaço pessoal de bem-estar e harmonia diária. Reserve um instante para se acomodar com absoluto conforto, sentado tranquilamente em sua poltrona ou descansando em sua cama. Vamos começar concentrando a atenção no ritmo natural da respiração. Sinta o ar entrando suavemente pelo nariz e saindo devagar. Permita que os ombros desçam naturalmente e deixe a superfície que sustenta você carregar seu peso. Se tiver movimento confortável nas mãos e nos dedos, mova-os lentamente. Se preferir permanecer quieto, simplesmente perceba o conforto da sua posição. Inspire devagar e expire suavemente. Permita-se afastar das distrações externas e permanecer neste momento tranquilo. Sua posição deve ser confortável, sem forçar nada. Continue respirando e perceba como cada expiração pode trazer uma sensação renovada de descanso.",
-"Começamos este momento especial dedicado ao seu descanso, equilíbrio e conforto cotidiano. Escolha a posição que ofereça maior segurança e conforto hoje. Leve sua atenção para o pescoço e a cabeça. Se for confortável, faça um pequeno movimento delicado de um lado para o outro ou simplesmente imagine esse movimento. Relaxe a mandíbula e suavize o rosto. Agora acompanhe sua respiração: inspire lentamente, faça uma pequena pausa e expire devagar. Se estiver descansando na cama, perceba o apoio das costas e da cabeça e deixe os braços repousarem confortavelmente. Continue nesse ritmo tranquilo e permita que o tempo passe sem pressa.",
-"Saudações nesta nova sessão de bem-estar pessoal. Encontre uma posição confortável com apoio firme e seguro. Hoje vamos prestar atenção ao movimento natural do peito durante a respiração. Se tiver movimento confortável nos braços, leve-os suavemente para uma posição mais relaxada. Se não tiver, simplesmente perceba o movimento natural do corpo enquanto respira. Observe onde suas costas encontram a cadeira ou a superfície de descanso. Cada expiração é uma oportunidade para deixar as preocupações do dia mais distantes. Mantenha sua atenção no presente e continue respirando lentamente.",
-"Seja muito bem-vindo à sua pausa restauradora de hoje. Esteja ativo, sentado confortavelmente ou descansando na cama, seu conforto vem primeiro. Perceba as principais áreas que apoiam seu corpo, como costas, pernas ou braços. Respire lentamente e sem exigência. Se for confortável, faça movimentos muito pequenos com os pulsos ou dedos. Se preferir ficar parado, imagine o movimento enquanto continua respirando. Permita-se permanecer nesta atmosfera tranquila. O objetivo deste momento é seu conforto e bem-estar.",
-"Começamos este momento de conexão com seu conforto e bem-estar. Acomode-se e feche os olhos se desejar. Vamos relaxar suavemente a parte superior do corpo. Relaxe o rosto, deixe os dentes ligeiramente separados, afaste os ombros das orelhas e respire devagar. Se alguma parte do corpo tiver movimento limitado, não force. Apenas observe com tranquilidade e continue respirando. Imagine uma sensação agradável percorrendo seu corpo. Este espaço oferece calma e estabilidade. Continue neste ritmo tranquilo.",
-"Bem-vindo à sua rotina de relaxamento e movimento adaptado para o bem-estar. Respire naturalmente e com calma, permitindo que o abdômen se mova livremente. Faça uma pequena caminhada mental pelo corpo, percebendo cada região com respeito pela sua situação atual. Se tiver movimento confortável nos membros, faça movimentos pequenos e lentos. Se estiver descansando, imagine esses movimentos suavemente. Mantenha a respiração constante e aproveite o silêncio. Permita que o corpo encontre seu próprio ritmo confortável sem pressão.",
-"É um prazer acompanhar você neste espaço de bem-estar criado para seu conforto. Ajuste sua posição até encontrar um lugar agradável para descansar. Leve a atenção para o centro do corpo e perceba cada respiração. Mantenha braços e pernas na posição que for mais confortável hoje. Este tempo pertence a você. Sinta o apoio abaixo do corpo e permita que seu peso descanse sobre essa superfície. Continue respirando lentamente neste momento de calma e harmonia.",
-"Começamos uma nova prática focada na sua paz interior, estabilidade e conforto. Escolha uma posição com bom apoio e sensação de segurança. Relaxe lentamente os dedos, braços e corpo através de uma respiração tranquila. Se alguma parte não tiver movimento, concentre-se simplesmente na respiração ou imagine um movimento confortável. Afaste-se temporariamente das distrações externas. Cada ciclo da respiração pode acompanhar uma sensação de renovação. Aproveite a estabilidade e a tranquilidade deste momento.",
-"Bem-vindo à sua sessão de renovação, descanso e equilíbrio. Encontre a posição mais confortável disponível. Leve a atenção para os ombros e a parte superior das costas, imaginando uma brisa suave e agradável diminuindo qualquer sensação de rigidez. Inspire profundamente sem pressa e solte o ar lentamente. Sinta o corpo relaxar e permita que a superfície de apoio receba seu peso. Mantenha tudo confortável e sem pressão. Este é um momento valioso de descanso.",
-"Encerramos este ciclo de recomendações de bem-estar com uma sessão centrada na calma e no conforto. Acomode-se sabendo que este tempo pertence a você. Combine sua respiração com pequenos movimentos confortáveis ou simplesmente imagine uma sensação de leveza. Sinta o apoio abaixo de você, relaxe o rosto e permita que o ar se mova naturalmente. Aproveite a estabilidade e a tranquilidade. Permaneça por alguns momentos respirando calmamente e prepare-se para continuar seu dia com serenidade.",
-"Iniciamos um novo espaço dedicado ao seu bem-estar cotidiano e ao relaxamento tranquilo. Escolha uma posição agradável. Leve sua atenção para as mãos e imagine uma sensação confortável de calor passando por elas. Se estiver na cama, permita que o colchão sustente completamente seu peso. Inspire lentamente e perceba o movimento suave do abdômen. Ao expirar, permita que qualquer preocupação fique mais distante. Esta prática cria uma pausa tranquila durante o dia. Deixe a calma envolver você.",
-"Seja bem-vindo a esta sessão voltada ao equilíbrio e ao relaxamento. Ajuste sua posição para que pescoço, costas e braços ou pernas estejam confortavelmente apoiados. Concentre a atenção no simples ato de respirar. Perceba a temperatura do ar ao entrar e a sensação ao sair. Se perceber tensão no rosto ou na mandíbula, relaxe suavemente. Cada respiração pode acompanhar uma sensação maior de calma e estabilidade. Aproveite este tempo de cuidado e descanso.",
-"Começamos uma pausa restauradora centrada no conforto. Deixe os braços repousarem ao lado do corpo ou sobre o colo da maneira mais confortável. Imagine uma onda suave de bem-estar percorrendo lentamente o corpo e deixando a rigidez para trás. Acompanhe essa imagem com uma respiração calma e constante. Evite pressa ou exigência. Este espaço é seu para descansar, recuperar energia e desfrutar de conforto.",
-"Saudamos este momento de pausa e harmonia dedicado ao seu bem-estar. Perceba o apoio do chão, da cadeira ou da cama abaixo de você. Permita que a respiração fique mais lenta e tranquila. Se desejar, feche os olhos enquanto percebe o movimento constante do ar. Aproveite a estabilidade e a tranquilidade deste momento.",
-"Entramos em uma sessão criada para oferecer uma respiração profunda e uma sensação confortável de relaxamento. Escolha a posição que ofereça maior conforto. Direcione a atenção para as costas e os ombros e permita que a superfície abaixo de você receba seu peso. Respire com calma e preencha este momento com tranquilidade e leveza. Este é o seu momento para permanecer no presente com conforto e segurança.",
-"Bem-vindo a este momento de harmonia e cuidado com seu estilo de vida. Escolha uma posição que permita relaxar confortavelmente. Inspire o ar fresco com calma, faça uma pequena pausa sem esforço e expire lentamente. Permita que o silêncio apoie sua sensação de paz. Aproveite cada minuto deste momento de descanso.",
-"Iniciamos uma prática destinada a cultivar conforto, equilíbrio e paz no seu dia. Sinta o apoio do travesseiro, da cama ou da cadeira acompanhando seu corpo. Respire profundamente e com tranquilidade enquanto concentra sua atenção na sensação agradável que surge quando as tensões diminuem. Aproveite este espaço de tranquilidade e permita que sua energia seja renovada naturalmente.",
-"Começamos um espaço de descanso e relaxamento profundo para acompanhar sua rotina de bem-estar. Escolha uma posição confortável, sem pressão ou exigência. Perceba o ritmo da respiração e como cada ciclo pode trazer uma sensação maior de leveza e estabilidade. Permaneça neste espaço de paz e aproveite o silêncio e o conforto físico.",
-"Saudamos você nesta sessão de pausa e harmonia criada para seu conforto diário. Encontre o local que oferece maior apoio e bem-estar. Conecte-se com sua respiração natural e permita que cada respiração entre e saia calmamente. Aproveite este momento de pausa, estabilidade e cuidado pessoal sem pressa.",
-"Finalizamos nosso repertório de bem-estar com um momento dedicado ao equilíbrio e à paz interior. Acomode-se sabendo que este tempo pertence a você. Respire profundamente, relaxe os músculos do rosto e permita que a superfície abaixo sustente seu corpo com confiança. Aproveite esta sensação de tranquilidade e prepare-se para continuar seu dia com maior harmonia."
+"""Bem-vindo ao seu espaço pessoal de bem-estar e harmonia diária.
+
+Reserve um instante para se acomodar com absoluto conforto.
+
+Sinta o apoio da superfície que sustenta seu corpo.
+
+Inspire lentamente pelo nariz.
+
+Expire suavemente.
+
+Permita que os ombros desçam naturalmente.
+
+Relaxe o rosto.
+
+Se tiver mobilidade nas mãos e nos dedos, mova-os muito devagar.
+
+Se preferir permanecer quieto, simplesmente imagine esse movimento.
+
+Continue respirando com calma.
+
+Permita-se permanecer alguns instantes neste momento de tranquilidade.""",
+"""Começamos este momento especial dedicado ao seu descanso, equilíbrio e conforto cotidiano.
+
+Coloque-se na posição que ofereça maior segurança e conforto.
+
+Direcione suavemente sua atenção para o pescoço.
+
+Se for confortável, gire muito pouco a cabeça para um lado.
+
+Volte lentamente ao centro.
+
+Agora olhe suavemente para o outro lado.
+
+Se não quiser movimentar a cabeça, apenas imagine o movimento.
+
+Relaxe a mandíbula.
+
+Suavize a expressão do rosto.
+
+Inspire devagar.
+
+Expire lentamente.
+
+Permaneça tranquilo por alguns instantes.""",
+"""Seja bem-vindo a esta nova sessão de bem-estar.
+
+Encontre uma posição que ofereça bom apoio.
+
+Observe suas costas descansando na cadeira ou na cama.
+
+Inspire lentamente.
+
+Perceba o peito se movimentando naturalmente.
+
+Expire sem pressa.
+
+Se tiver mobilidade nos braços, mova-os suavemente para uma posição confortável.
+
+Se não puder fazer isso, simplesmente imagine o movimento.
+
+Deixe os ombros descansarem.
+
+Mantenha sua atenção neste momento.
+
+Respire lentamente e continue com tranquilidade.""",
+"""Bem-vindo à sua pausa de hoje.
+
+Não importa se você está ativo, sentado ou descansando na cama.
+
+O primeiro passo é encontrar conforto.
+
+Perceba os pontos onde seu corpo recebe apoio.
+
+Observe suas pernas.
+
+Observe seus braços.
+
+Respire lentamente.
+
+Se for agradável, mova suavemente os dedos das mãos.
+
+Também pode movimentar levemente os pés se isso for confortável.
+
+Se preferir ficar quieto, imagine esses pequenos movimentos.
+
+Não force nenhuma parte do corpo.
+
+Continue respirando com serenidade.""",
+"""Começamos este momento dedicado ao seu bem-estar pessoal.
+
+Acomode-se livremente.
+
+Feche os olhos se desejar.
+
+Relaxe o rosto.
+
+Deixe os dentes ligeiramente separados.
+
+Deixe os ombros descansarem.
+
+Inspire lentamente.
+
+Expire suavemente.
+
+Se alguma parte do corpo tiver pouco movimento, não force.
+
+Apenas perceba essa região.
+
+Continue respirando tranquilamente.
+
+Permita que este momento seja somente seu.""",
+"""Bem-vindo à sua rotina de relaxamento e movimento adaptado.
+
+Respire naturalmente.
+
+Observe o movimento suave do abdômen enquanto respira.
+
+Percorra mentalmente seu corpo da cabeça aos pés.
+
+Reconheça cada parte com respeito.
+
+Se tiver mobilidade nas mãos, faça pequenos movimentos circulares.
+
+Faça tudo muito lentamente.
+
+Se estiver em repouso, imagine esses movimentos.
+
+Mantenha uma respiração tranquila.
+
+Permita que seu corpo encontre seu próprio ritmo.
+
+Continue sem pressa.""",
+"""É um prazer acompanhar você neste espaço de bem-estar.
+
+Ajuste sua posição até encontrar um ponto agradável de descanso.
+
+Sinta o apoio que recebe seu corpo.
+
+Inspire lentamente.
+
+Expire suavemente.
+
+Mantenha braços e pernas na posição mais confortável para você.
+
+Não precisa fazer nenhum movimento que cause desconforto.
+
+Permita que o peso do corpo descanse sobre a superfície.
+
+Continue respirando lentamente.
+
+Permaneça tranquilo por alguns instantes.""",
+"""Começamos uma nova prática dedicada à sua paz e conforto.
+
+Adote uma posição com bom apoio.
+
+Sinta que está seguro e confortável.
+
+Relaxe lentamente os dedos das mãos se puder movimentá-los.
+
+Relaxe os braços.
+
+Se alguma parte do corpo não tiver movimento, não tente forçá-la.
+
+Concentre-se na respiração.
+
+Imagine um movimento suave e confortável.
+
+Inspire lentamente.
+
+Expire lentamente.
+
+Permita que a calma permaneça com você.""",
+"""Bem-vindo à sua sessão de descanso e equilíbrio.
+
+Encontre a posição mais confortável disponível para você.
+
+Direcione sua atenção para os ombros.
+
+Observe a parte superior das costas.
+
+Imagine uma brisa suave passando por essa região.
+
+Inspire profundamente sem esforço.
+
+Expire lentamente.
+
+Sinta seu corpo descansando sobre o apoio.
+
+Não apresse nenhum movimento.
+
+Permaneça confortável.
+
+Continue respirando com tranquilidade.""",
+"""Chegamos a um momento de serenidade e conforto.
+
+Acomode-se sabendo que este tempo pertence a você.
+
+Respire lentamente.
+
+Se puder fazer pequenos movimentos confortáveis, faça-os sem pressa.
+
+Se não quiser se movimentar, imagine uma sensação de leveza.
+
+Relaxe o rosto.
+
+Sinta o apoio sob seu corpo.
+
+Inspire mais uma vez.
+
+Expire lentamente.
+
+Permaneça alguns instantes aproveitando esta tranquilidade.""",
+"""Iniciamos um novo espaço dedicado ao seu bem-estar cotidiano.
+
+Adote uma posição agradável.
+
+Direcione sua atenção para as mãos.
+
+Se puder movimentá-las, permita que os dedos relaxem.
+
+Se não puder movimentá-los, apenas imagine uma agradável sensação de calor.
+
+Se estiver descansando na cama, permita que a superfície sustente seu peso.
+
+Inspire lentamente.
+
+Expire e deixe qualquer preocupação ficar um pouco mais distante.
+
+Permaneça tranquilo.
+
+Aproveite este momento.""",
+"""Bem-vindo a esta sessão de equilíbrio e relaxamento.
+
+Ajuste sua posição para se sentir confortável.
+
+Sinta o apoio do pescoço.
+
+Sinta o apoio das costas.
+
+Permita que braços e pernas descansem.
+
+Concentre-se no simples ato de respirar.
+
+Perceba o ar entrando.
+
+Perceba o ar saindo.
+
+Relaxe suavemente o rosto.
+
+Solte a mandíbula.
+
+Continue respirando com calma.""",
+"""Começamos uma pausa restauradora centrada no seu conforto.
+
+Coloque os braços da maneira mais agradável para você.
+
+Deixe-os descansar sobre o colo ou ao lado do corpo.
+
+Imagine uma sensação suave percorrendo lentamente seu corpo.
+
+Acompanhe essa imagem com uma respiração tranquila.
+
+Inspire devagar.
+
+Expire lentamente.
+
+Não tenha pressa.
+
+Permita que este espaço seja seu.
+
+Continue descansando com serenidade.""",
+"""Saudamos este instante de pausa e harmonia.
+
+Sinta a superfície que sustenta seu corpo.
+
+Pode ser uma cadeira, uma poltrona ou uma cama.
+
+Permita que a respiração fique lenta.
+
+Inspire com tranquilidade.
+
+Expire suavemente.
+
+Mantenha sua atenção no ar entrando e saindo.
+
+Se quiser fechar os olhos, pode fazê-lo.
+
+Permaneça confortável.
+
+Aproveite alguns instantes de tranquilidade.""",
+"""Entramos em uma sessão pensada para oferecer descanso e tranquilidade.
+
+Coloque-se na posição que ofereça maior conforto.
+
+Direcione sua atenção para as costas.
+
+Observe os ombros.
+
+Permita que o peso do corpo descanse sobre a superfície.
+
+Respire com calma.
+
+Inspire lentamente.
+
+Expire suavemente.
+
+Imagine que cada respiração permite deixar um pouco da tensão cotidiana para trás.
+
+Permaneça no presente.
+
+Continue com serenidade.""",
+"""Bem-vindo a este momento de harmonia e cuidado com seu estilo de vida.
+
+Encontre uma posição confortável.
+
+Permita que suas costas descansem.
+
+Inspire lentamente.
+
+Mantenha o ar por um instante sem esforço.
+
+Expire devagar.
+
+Deixe qualquer rigidez diminuir naturalmente.
+
+Não precisa ter pressa.
+
+Aproveite o silêncio.
+
+Continue respirando tranquilamente.""",
+"""Iniciamos uma prática destinada ao conforto e à paz do seu dia.
+
+Sinta o apoio do travesseiro, da cama ou do encosto.
+
+Acomode o corpo da maneira mais agradável para você.
+
+Respire profundamente sem esforço.
+
+Observe como é sentir as tensões diminuírem.
+
+Relaxe os ombros.
+
+Relaxe o rosto.
+
+Permaneça confortável.
+
+Deixe a tranquilidade acompanhar cada respiração.""",
+"""Começamos um espaço de descanso e relaxamento.
+
+Adote uma posição confortável e livre de pressão.
+
+Sinta o ritmo natural da sua respiração.
+
+Inspire lentamente.
+
+Expire lentamente.
+
+Observe como cada respiração pode trazer uma sensação de leveza.
+
+Você não precisa fazer mais nada.
+
+Permaneça nessa posição.
+
+Aproveite o silêncio e o apoio que recebe seu corpo.
+
+Continue respirando com tranquilidade.""",
+"""Finalizamos este repertório de bem-estar com um momento dedicado ao equilíbrio e à paz.
+
+Acomode-se sabendo que este tempo pertence a você.
+
+Sinta a superfície que sustenta seu corpo.
+
+Relaxe o rosto.
+
+Respire profundamente sem esforço.
+
+Expire lentamente.
+
+Deixe os ombros descansarem.
+
+Permaneça alguns instantes em calma.
+
+Quando estiver preparado, continue seu dia lentamente e com tranquilidade."""
 ]
 
-LANG_NAMES={"es":"Spanish","en":"English","pt":"Portuguese"}
-FALLBACK_BANKS={"es":FALLBACK_SESSIONS_ES,"en":FALLBACK_SESSIONS_EN,"pt":FALLBACK_SESSIONS_PT}
+FALLBACK_SESSIONS_EN=[
+"""Welcome to your personal space for daily wellbeing and harmony.
 
-def get_fallback(device_id,language):
-    bank=FALLBACK_BANKS.get(language,FALLBACK_SESSIONS_ES)
-    index=next_fallback_index(device_id,len(bank))
-    return bank[index%len(bank)]
+Take a moment to settle into a comfortable position.
+
+Feel the surface supporting your body.
+
+Breathe in slowly through your nose.
+
+Breathe out gently.
+
+Allow your shoulders to drop naturally.
+
+Relax your face.
+
+If you can comfortably move your hands and fingers, move them very slowly.
+
+If you prefer to remain still, simply imagine the movement.
+
+Continue breathing calmly.
+
+Remain here for a few quiet moments.""",
+"""We begin this special moment devoted to your rest, balance, and everyday comfort.
+
+Choose the position that feels safest and most comfortable.
+
+Bring your gentle attention to your neck.
+
+If it feels comfortable, turn your head slightly to one side.
+
+Slowly return to the center.
+
+Now gently look toward the other side.
+
+If you do not want to move your head, simply imagine the movement.
+
+Relax your jaw.
+
+Soften your facial expression.
+
+Breathe in slowly.
+
+Breathe out gently.
+
+Remain calm for a few moments.""",
+"""Welcome to this new wellbeing session.
+
+Find a position that gives you good support.
+
+Notice your back resting against the chair or the bed.
+
+Breathe in slowly.
+
+Notice the natural movement of your chest.
+
+Breathe out without rushing.
+
+If you have comfortable movement in your arms, move them gently into a comfortable position.
+
+If you cannot do that, simply imagine the movement.
+
+Let your shoulders rest.
+
+Keep your attention on this moment.
+
+Breathe slowly and continue calmly.""",
+"""Welcome to your pause for today.
+
+Whether you are active, seated, or resting in bed, comfort comes first.
+
+Notice the places where your body receives support.
+
+Notice your legs.
+
+Notice your arms.
+
+Breathe slowly.
+
+If it feels pleasant, gently move your fingers.
+
+You may also move your feet slightly if that feels comfortable.
+
+If you prefer to remain still, imagine those small movements.
+
+Do not force any part of your body.
+
+Continue breathing calmly.""",
+"""We begin this moment devoted to your personal wellbeing.
+
+Settle in freely.
+
+Close your eyes if you wish.
+
+Relax your face.
+
+Let your teeth separate slightly.
+
+Allow your shoulders to rest.
+
+Breathe in slowly.
+
+Breathe out gently.
+
+If any part of your body has limited movement, do not force it.
+
+Simply notice that area.
+
+Continue breathing calmly.
+
+Allow this moment to belong entirely to you.""",
+"""Welcome to your adapted relaxation and movement routine.
+
+Breathe naturally.
+
+Notice the gentle movement of your abdomen as you breathe.
+
+Take a quiet mental journey from your head to your feet.
+
+Notice each part with respect.
+
+If your hands can move comfortably, make very small circles.
+
+Move very slowly.
+
+If you are resting, imagine those movements.
+
+Keep your breathing calm.
+
+Allow your body to find its own rhythm.
+
+Continue without rushing.""",
+"""It is a pleasure to accompany you in this wellbeing space.
+
+Adjust your position until you find a comfortable place to rest.
+
+Feel the support beneath your body.
+
+Breathe in slowly.
+
+Breathe out gently.
+
+Keep your arms and legs in the position that feels most comfortable.
+
+You do not need to make any movement that feels uncomfortable.
+
+Allow your body weight to rest on the supporting surface.
+
+Continue breathing slowly.
+
+Remain peaceful for a few moments.""",
+"""We begin a new practice devoted to your peace and comfort.
+
+Choose a position with good support.
+
+Feel safe and comfortable.
+
+Slowly relax your fingers if you can move them.
+
+Relax your arms.
+
+If any part of your body does not move, do not try to force it.
+
+Focus on your breathing.
+
+Imagine a gentle and comfortable movement.
+
+Breathe in slowly.
+
+Breathe out slowly.
+
+Allow calmness to remain with you.""",
+"""Welcome to your session of rest and balance.
+
+Find the most comfortable position available to you.
+
+Bring your attention to your shoulders.
+
+Notice your upper back.
+
+Imagine a soft, pleasant breeze passing through that area.
+
+Breathe in deeply without effort.
+
+Breathe out slowly.
+
+Feel your body resting into the support beneath you.
+
+Do not rush any movement.
+
+Remain comfortable.
+
+Continue breathing peacefully.""",
+"""We arrive at a moment of serenity and comfort.
+
+Settle in knowing that this time belongs to you.
+
+Breathe slowly.
+
+If you can make small comfortable movements, make them without rushing.
+
+If you do not want to move, simply imagine a feeling of lightness.
+
+Relax your face.
+
+Feel the support beneath your body.
+
+Take one more slow breath in.
+
+Breathe out gently.
+
+Remain here for a few moments and enjoy the quiet.""",
+"""We begin a new space devoted to your everyday wellbeing.
+
+Choose a comfortable position.
+
+Bring your attention to your hands.
+
+If you can move them, allow your fingers to relax.
+
+If you cannot move them, simply imagine a pleasant feeling of warmth.
+
+If you are resting in bed, allow the surface to support your weight.
+
+Breathe in slowly.
+
+As you breathe out, allow any worry to feel a little farther away.
+
+Remain calm.
+
+Enjoy this moment.""",
+"""Welcome to this session of balance and relaxation.
+
+Adjust your position until you feel comfortable.
+
+Notice the support beneath your neck.
+
+Notice the support beneath your back.
+
+Allow your arms and legs to rest.
+
+Focus on the simple act of breathing.
+
+Notice the air coming in.
+
+Notice the air going out.
+
+Gently relax your face.
+
+Let your jaw loosen.
+
+Continue breathing calmly.""",
+"""We begin a restorative pause centered on your comfort.
+
+Place your arms in the way that feels most pleasant.
+
+Let them rest on your lap or beside your body.
+
+Imagine a gentle feeling moving slowly through your body.
+
+Follow that image with calm breathing.
+
+Breathe in slowly.
+
+Breathe out gently.
+
+There is no need to hurry.
+
+Allow this space to be yours.
+
+Continue resting peacefully.""",
+"""We welcome this moment of pause and harmony.
+
+Feel the surface supporting your body.
+
+It may be a chair, an armchair, or a bed.
+
+Allow your breathing to become slower.
+
+Breathe in calmly.
+
+Breathe out gently.
+
+Keep your attention on the air moving in and out.
+
+If you wish to close your eyes, you may do so.
+
+Remain comfortable.
+
+Enjoy a few quiet moments.""",
+"""We enter a session created to offer rest and tranquility.
+
+Place yourself in the position that gives you the greatest comfort.
+
+Bring your attention to your back.
+
+Notice your shoulders.
+
+Allow your body weight to rest on the supporting surface.
+
+Breathe calmly.
+
+Breathe in slowly.
+
+Breathe out gently.
+
+Imagine each breath allowing a little of the day's tension to move farther away.
+
+Remain in the present moment.
+
+Continue peacefully.""",
+"""Welcome to this moment of harmony and care for your everyday lifestyle.
+
+Find a comfortable position.
+
+Allow your back to rest.
+
+Breathe in slowly.
+
+Hold the breath for a brief moment without effort.
+
+Breathe out gently.
+
+Allow any stiffness to ease naturally.
+
+There is no need to hurry.
+
+Enjoy the quiet.
+
+Continue breathing calmly.""",
+"""We begin a practice devoted to comfort and peace during your day.
+
+Feel the support of your pillow, bed, or chair.
+
+Arrange your body in the way that feels most pleasant.
+
+Breathe deeply without forcing the breath.
+
+Notice what it feels like to let everyday tension soften.
+
+Relax your shoulders.
+
+Relax your face.
+
+Remain comfortable.
+
+Let calmness accompany every breath.""",
+"""We begin a space for rest and relaxation.
+
+Choose a comfortable position free from pressure.
+
+Notice the natural rhythm of your breathing.
+
+Breathe in slowly.
+
+Breathe out slowly.
+
+Notice how each breath can bring a feeling of lightness.
+
+You do not need to do anything else right now.
+
+Remain in this position.
+
+Enjoy the quiet and the support beneath your body.
+
+Continue breathing peacefully.""",
+"""We finish this wellbeing collection with a moment devoted to balance and peace.
+
+Settle in knowing that this time belongs to you.
+
+Feel the surface supporting your body.
+
+Relax your face.
+
+Breathe deeply without forcing the breath.
+
+Breathe out slowly.
+
+Let your shoulders rest.
+
+Remain calm for a few moments.
+
+When you are ready, continue your day slowly and peacefully."""
+]
+
+def normalize_session_units(text):
+    if not text:return ""
+    text=text.replace("\r\n","\n").replace("\r","\n")
+    text=re.sub(r"[ \t]+"," ",text)
+    paragraphs=[p.strip() for p in re.split(r"\n\s*\n+",text) if p.strip()]
+    if len(paragraphs)>1:return "\n\n".join(paragraphs)
+    sentences=re.split(r"(?<=[.!?])\s+",text.strip());units=[];current=[]
+    for sentence in sentences:
+        sentence=sentence.strip()
+        if not sentence:continue
+        current.append(sentence)
+        if len(current)>=1:
+            units.append(" ".join(current));current=[]
+    if current:units.append(" ".join(current))
+    return "\n\n".join(units)
 
 @app.get("/",response_class=FileResponse)
-async def serve_frontend():
-    return FileResponse("index.html",media_type="text/html")
+async def serve_frontend():return FileResponse("index.html",media_type="text/html")
 
 @app.post("/api/v1/authorize-courtesy")
 async def authorize_courtesy(request:Request):
-    body=await request.json()
-    username=str(body.get("username","")).strip()
-    password=str(body.get("password","")).strip()
-    device_id=str(body.get("device_id","")).strip()
-    if not ADMIN_USER or not ADMIN_PASS:
-        raise HTTPException(status_code=500,detail="Admin credentials not configured in Render environment variables.")
+    body=await request.json();username=body.get("username","").strip();password=body.get("password","").strip();device_id=body.get("device_id","").strip()
+    if not ADMIN_USER or not ADMIN_PASS:raise HTTPException(status_code=500,detail="Admin credentials not configured in Render environment variables.")
     if username==ADMIN_USER and password==ADMIN_PASS and device_id:
-        authorize_device(device_id)
-        return {"status":"success"}
+        authorize_device(device_id);return {"status":"success"}
     raise HTTPException(status_code=401,detail="Invalid credentials.")
 
 @app.post("/api/v1/create-checkout-session")
 async def create_checkout_session(request:Request):
     try:
-        body=await request.json()
-        device_id=str(body.get("device_id","")).strip()
+        body=await request.json();device_id=str(body.get("device_id","")).strip()
         if not device_id:raise HTTPException(status_code=400,detail="Device ID required.")
         if not stripe.api_key:raise HTTPException(status_code=500,detail="STRIPE_SECRET_KEY is missing in Render.")
         if not STRIPE_PRICE_ID:raise HTTPException(status_code=500,detail="STRIPE_PRICE_ID is missing in Render.")
-        checkout_session=stripe.checkout.Session.create(
-            line_items=[{"price":STRIPE_PRICE_ID,"quantity":1}],
-            mode="subscription",
-            success_url=f"{BASE_URL}/success?session_id={{CHECKOUT_SESSION_ID}}&device_id={device_id}",
-            cancel_url=f"{BASE_URL}/cancel",
-            metadata={"device_id":device_id}
-        )
+        checkout_session=stripe.checkout.Session.create(line_items=[{"price":STRIPE_PRICE_ID,"quantity":1}],mode="subscription",success_url=f"{BASE_URL}/success?session_id={{CHECKOUT_SESSION_ID}}&device_id={device_id}",cancel_url=f"{BASE_URL}/cancel",metadata={"device_id":device_id})
         return {"status":"success","checkout_url":checkout_session.url}
     except HTTPException:raise
     except stripe.error.StripeError as e:raise HTTPException(status_code=502,detail=f"Stripe error: {str(e)}")
@@ -234,155 +1285,149 @@ async def stripe_webhook(request:Request,stripe_signature:str=Header(default=Non
     payload=await request.body()
     if not STRIPE_WEBHOOK_SECRET:raise HTTPException(status_code=500,detail="STRIPE_WEBHOOK_SECRET is missing in Render.")
     if not stripe_signature:raise HTTPException(status_code=400,detail="Missing Stripe-Signature header.")
-    try:
-        event=stripe.Webhook.construct_event(payload,stripe_signature,STRIPE_WEBHOOK_SECRET)
+    try:event=stripe.Webhook.construct_event(payload,stripe_signature,STRIPE_WEBHOOK_SECRET)
     except ValueError:raise HTTPException(status_code=400,detail="Invalid webhook payload.")
     except stripe.error.SignatureVerificationError:raise HTTPException(status_code=400,detail="Invalid Stripe webhook signature.")
     except Exception as e:raise HTTPException(status_code=400,detail=f"Webhook error: {str(e)}")
     event_type=event.get("type")
     if event_type=="checkout.session.completed":
-        session=event["data"]["object"]
-        metadata=session.get("metadata") or {}
-        device_id=metadata.get("device_id")
-        customer_id=session.get("customer")
-        subscription_id=session.get("subscription")
-        payment_status=session.get("payment_status")
-        if device_id and payment_status in ("paid","no_payment_required"):
-            authorize_device(device_id,customer_id,subscription_id)
+        session=event["data"]["object"];metadata=session.get("metadata") or {};device_id=metadata.get("device_id");customer_id=session.get("customer");subscription_id=session.get("subscription");payment_status=session.get("payment_status")
+        if device_id and payment_status in ("paid","no_payment_required"):authorize_device(device_id,customer_id,subscription_id)
     elif event_type in ("customer.subscription.deleted","customer.subscription.unpaid"):
-        subscription=event["data"]["object"]
-        deactivate_device_by_subscription(subscription.get("id"))
+        subscription=event["data"]["object"];deactivate_device_by_subscription(subscription.get("id"))
     elif event_type=="customer.subscription.updated":
-        subscription=event["data"]["object"]
-        status=subscription.get("status")
-        subscription_id=subscription.get("id")
-        conn=get_db()
+        subscription=event["data"]["object"];status=subscription.get("status");subscription_id=subscription.get("id")
         if status in ("active","trialing"):
-            conn.execute("UPDATE authorized_devices SET status='active',updated_at=CURRENT_TIMESTAMP WHERE stripe_subscription_id=?",(subscription_id,))
-        elif status in ("canceled","unpaid","incomplete_expired","past_due"):
-            conn.execute("UPDATE authorized_devices SET status='inactive',updated_at=CURRENT_TIMESTAMP WHERE stripe_subscription_id=?",(subscription_id,))
-        conn.commit()
-        conn.close()
+            conn=get_db();conn.execute("UPDATE authorized_devices SET status='active',updated_at=CURRENT_TIMESTAMP WHERE stripe_subscription_id=?",(subscription_id,));conn.commit();conn.close()
+        elif status in ("canceled","unpaid","incomplete_expired"):deactivate_device_by_subscription(subscription_id)
     return {"status":"success"}
 
 @app.get("/api/v1/access-status")
-async def access_status(device_id:str=""):
-    return {"authorized":check_device_authorization(device_id.strip())}
+async def access_status(device_id:str=""):return {"authorized":check_device_authorization(device_id.strip())}
 
 @app.get("/success",response_class=HTMLResponse)
-async def payment_success(session_id:str=None,device_id:str=None):
-    verified=False
+async def payment_success(session_id:str="",device_id:str=""):
+    authorized=False
     if session_id and stripe.api_key:
         try:
-            session=stripe.checkout.Session.retrieve(session_id)
-            verified=session.get("payment_status") in ("paid","no_payment_required")
-        except Exception:
-            verified=False
-    if verified:
-        return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><title>AL CIELO</title></head><body style="background:#0f172a;color:white;text-align:center;padding:60px 20px;font-family:Arial,sans-serif"><h1 style="color:#4ade80">Payment Received</h1><p>Stripe received your payment.</p><p>Returning to AL CIELO and confirming your access.</p><script>setTimeout(function(){{window.location.replace("{BASE_URL}/?session_id="+encodeURIComponent("{session_id or ""}")+"&device_id="+encodeURIComponent("{device_id or ""}"));}},1200);</script><a href="{BASE_URL}" style="display:inline-block;margin-top:20px;padding:12px 24px;background:#0284c7;color:white;text-decoration:none;border-radius:8px;font-weight:bold">Return to AL CIELO</a></body></html>"""
-    return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><title>AL CIELO</title></head><body style="background:#0f172a;color:white;text-align:center;padding:60px 20px;font-family:Arial,sans-serif"><h1 style="color:#f87171">Payment Not Confirmed</h1><p>We could not verify the payment with Stripe.</p><a href="{BASE_URL}" style="display:inline-block;margin-top:20px;padding:12px 24px;background:#0284c7;color:white;text-decoration:none;border-radius:8px;font-weight:bold">Return to AL CIELO</a></body></html>"""
+            session=stripe.checkout.Session.retrieve(session_id);metadata=session.get("metadata") or {};session_device=metadata.get("device_id") or device_id;payment_status=session.get("payment_status")
+            if session_device and payment_status in ("paid","no_payment_required"):authorized=check_device_authorization(session_device)
+        except Exception:authorized=False
+    if authorized:
+        return HTMLResponse(f"""<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AL CIELO</title></head>
+<body style="margin:0;background:#0f172a;color:white;font-family:Arial,sans-serif;text-align:center;padding:40px"><h2>Pago recibido</h2><p>Estamos preparando su acceso a AL CIELO.</p><script>setTimeout(function(){{location.href="{BASE_URL}?device_id={device_id}";}},1200);</script></body></html>""")
+    return HTMLResponse("""<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AL CIELO</title></head>
+<body style="margin:0;background:#0f172a;color:white;font-family:Arial,sans-serif;text-align:center;padding:40px"><h2>Pago recibido</h2><p>Estamos verificando su acceso. Espere unos instantes y vuelva a AL CIELO.</p><script>setTimeout(function(){location.href="/";},3000);</script></body></html>""")
 
 @app.get("/cancel",response_class=HTMLResponse)
 async def payment_cancel():
-    return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><title>AL CIELO</title></head><body style="background:#0f172a;color:white;text-align:center;padding:60px 20px;font-family:Arial,sans-serif"><h1 style="color:#f87171">Payment Canceled</h1><p>No subscription was activated.</p><a href="{BASE_URL}" style="display:inline-block;margin-top:20px;padding:12px 24px;background:#0284c7;color:white;text-decoration:none;border-radius:8px;font-weight:bold">Return Home</a></body></html>"""
+    return HTMLResponse(f"""<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AL CIELO</title></head>
+<body style="margin:0;background:#0f172a;color:white;font-family:Arial,sans-serif;text-align:center;padding:40px"><h2>Pago cancelado</h2><p>No se realizó ningún cobro.</p><p>Puede regresar a AL CIELO cuando lo desee.</p><a href="{BASE_URL}" style="color:white">Volver a AL CIELO</a></body></html>""")
 
 @app.post("/api/v1/generate-session")
 async def generate_session(request:Request):
     try:
-        body=await request.json()
-        device_id=str(body.get("device_id","")).strip()
-        language=str(body.get("language","es")).lower().strip()
-        is_hook=bool(body.get("is_hook",False))
+        body=await request.json();device_id=str(body.get("device_id","")).strip();language=str(body.get("language","es")).lower().strip();is_hook=bool(body.get("is_hook",False))
         if language not in ("es","en","pt"):language="es"
         if not device_id:raise HTTPException(status_code=400,detail="Device id required.")
-        if not is_hook and not check_device_authorization(device_id):
-            raise HTTPException(status_code=403,detail="Subscription or login required for full session.")
-        selected_lang_name=LANG_NAMES[language]
-        unique_prompt_modifier=random.choice([
-            "Focus on shoulder relaxation, upper body comfort and peaceful pacing.",
-            "Focus on comfortable hand, finger and wrist micro-movements combined with calm breathing.",
-            "Focus on breathing rhythm, comfortable posture and a peaceful pace.",
-            "Focus on deep relaxation, quiet attention and comfortable resting support.",
-            "Focus on gentle neck comfort, facial relaxation and total body grounding."
-        ])
+        if not is_hook and not check_device_authorization(device_id):raise HTTPException(status_code=403,detail="Subscription or login required for full session.")
+        lang_names={"es":"Spanish","en":"English","pt":"Portuguese"};selected_lang_name=lang_names[language]
+        unique_prompt_modifier=random.choice(["Focus on shoulder relaxation, upper body comfort, and peaceful pacing.","Focus on hand, finger, and wrist gentle movements combined with calm breathing.","Focus on breathing rhythm, chest comfort, and a relaxed supported posture.","Focus on deep mental relaxation, quiet attention, and comfortable resting.","Focus on gentle neck comfort, facial relaxation, and total body grounding.","Focus on small movements that can be adapted to the person's available mobility.","Focus on calm transitions between breathing, posture, and simple comfortable movement."])
         if is_hook:
-            prompt=f"""Generate a strict 30-SECOND FREE PREVIEW ONLY in {selected_lang_name}.
-Maximum 50 words.
-Give a warm greeting and one single gentle breathing action.
-Output ONLY plain conversational {selected_lang_name}.
-Do not use any other language.
-No title.
-No heading.
-No labels."""
+            prompt=f"""Generate a strict 30-SECOND FREE PREVIEW in [{selected_lang_name}].
+
+Keep it extremely brief.
+
+Provide a warm greeting and one single gentle breathing action.
+
+Output ONLY plain conversational text in {selected_lang_name}.
+
+The entire response must be ONLY {selected_lang_name}.
+Do not mix languages.
+Do not include a title.
+"""
             max_tokens=150
         else:
             prompt=f"""{unique_prompt_modifier}
 
-Generate a completely unique, extensive, detailed 10-MINUTE GUIDED WELLNESS AND LIFESTYLE SESSION ONLY in {selected_lang_name} for adults aged 50 and over.
+Generate a completely unique, extensive guided wellness and lifestyle session in {selected_lang_name}
+for adults aged 50 and over, including active, seated, resting, bedridden, limited-mobility, or missing-limb users.
 
-The person may be active, seated, resting, in bed, have limited mobility or have missing limbs.
-Guide the person in a warm, calm and practical manner.
-Never require a movement that may be impossible for the person.
-Offer comfortable alternatives when appropriate.
+Act as a calm live human wellness companion guiding the person one action at a time.
 
-DO NOT use the words phase, fase, stage, IA, AI, ChatGPT, Gemini or OpenAI.
+IMPORTANT STRUCTURE:
+
+Do NOT write long paragraphs containing several actions.
+
+Every individual instruction or exercise must be separated into its own short paragraph.
+
+Prefer one direct action per paragraph.
+
+Examples of the required style:
+
+Adopt a comfortable position.
+
+Breathe in slowly through your nose.
+
+Breathe out gently.
+
+Relax your shoulders.
+
+Remain comfortable for a few moments.
+
+Then continue with the next instruction.
+
+Every instruction must be simple enough for a person aged 50 or older to understand immediately.
+
+Do not combine multiple exercises into one paragraph.
+
+Use natural pauses between instructions.
+
+Vary the sequence, wording, movement, breathing, posture, sensory attention, and resting focus so the session feels fresh.
+
+Every movement must be optional and comfortable.
+
+If a movement is not possible, provide a simple mental visualization or another comfortable option.
+
+DO NOT use the word 'fase' or 'phase'.
+
 DO NOT use medical or clinical terminology.
-DO NOT include diagnoses, treatments, therapy or medical authority.
-DO NOT include IDs, codes, numbers used as labels or technical tags.
-DO NOT include headings, titles or numbered sections.
 
-Use multiple separate natural paragraphs.
-Each paragraph must contain complete spoken content.
-Output ONLY conversational {selected_lang_name}.
-DO NOT MIX LANGUAGES.
-The entire response must remain in {selected_lang_name}.
+DO NOT include diagnoses, treatment, medical authority, IDs, codes, technical tags, headings, titles, numbering, or labels.
+
+The complete response must be ONLY in {selected_lang_name}.
+
+NEVER mix Spanish, English, Portuguese, or another language.
+
+Do not translate only the first paragraph while leaving other paragraphs in another language.
+
+Every paragraph must remain in {selected_lang_name}.
+
+Output ONLY the spoken session.
 """
-            max_tokens=5000
+            max_tokens=3500
         response_text=""
         if gemini_client:
             try:
-                task=asyncio.to_thread(
-                    gemini_client.models.generate_content,
-                    model="gemini-2.5-flash",
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        system_instruction=SYSTEM_WELLNESS_PROMPT,
-                        temperature=.98,
-                        max_output_tokens=max_tokens
-                    )
-                )
-                result=await asyncio.wait_for(task,timeout=20)
-                response_text=(result.text or "").strip()
-            except Exception:
-                response_text=""
+                response_task=asyncio.to_thread(gemini_client.models.generate_content,model="gemini-2.5-flash",contents=prompt,config=types.GenerateContentConfig(system_instruction=SYSTEM_WELLNESS_PROMPT,temperature=0.98,max_output_tokens=max_tokens))
+                gemini_response=await asyncio.wait_for(response_task,timeout=20.0);response_text=gemini_response.text or ""
+            except Exception:response_text=""
         if not response_text and openai_client:
             try:
-                task=asyncio.to_thread(
-                    openai_client.chat.completions.create,
-                    model="gpt-4o-mini",
-                    messages=[
-                        {"role":"system","content":SYSTEM_WELLNESS_PROMPT},
-                        {"role":"user","content":prompt}
-                    ],
-                    temperature=.98,
-                    max_tokens=max_tokens
-                )
-                result=await asyncio.wait_for(task,timeout=20)
-                response_text=(result.choices[0].message.content or "").strip()
-            except Exception:
-                response_text=""
-        if not response_text or (not is_hook and len(response_text)<400):
-            if is_hook:
-                hooks={
-                    "es":"Bienvenido a AL CIELO. Adopte una postura cómoda, inhale lentamente por la nariz y deje que sus hombros se relajen mientras exhala.",
-                    "en":"Welcome to AL CIELO. Find a comfortable position, breathe in slowly through your nose, and let your shoulders relax as you breathe out.",
-                    "pt":"Bem-vindo ao AL CIELO. Encontre uma posição confortável, inspire lentamente pelo nariz e deixe os ombros relaxarem ao expirar."
-                }
-                response_text=hooks[language]
-            else:
-                response_text=get_fallback(device_id,language)
+                openai_task=asyncio.to_thread(openai_client.chat.completions.create,model="gpt-4o-mini",messages=[{"role":"system","content":SYSTEM_WELLNESS_PROMPT},{"role":"user","content":prompt}],temperature=0.98,max_tokens=max_tokens)
+                openai_response=await asyncio.wait_for(openai_task,timeout=20.0);response_text=openai_response.choices[0].message.content or ""
+            except Exception:response_text=""
+        if is_hook:
+            hooks={"es":"Bienvenido a AL CIELO. Adopte una postura cómoda, inhale lentamente por la nariz y deje que sus hombros se relajen mientras exhala.","en":"Welcome to AL CIELO. Find a comfortable position, breathe in slowly through your nose, and let your shoulders relax as you breathe out.","pt":"Bem-vindo ao AL CIELO. Encontre uma posição confortável, inspire lentamente pelo nariz e deixe os ombros relaxarem ao expirar."}
+            if not response_text or len(response_text.strip())<40:response_text=hooks[language]
+            response_text=normalize_session_units(response_text)
+        else:
+            if not response_text or len(response_text.strip())<400:
+                banks={"es":FALLBACK_SESSIONS_ES,"en":FALLBACK_SESSIONS_EN,"pt":FALLBACK_SESSIONS_PT};bank=banks[language];index=next_fallback_index(device_id,language,len(bank));response_text=bank[index]
+            else:response_text=normalize_session_units(response_text)
         return {"status":"success","session_content":response_text}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500,detail=str(e))
+    except HTTPException:raise
+    except Exception as e:raise HTTPException(status_code=500,detail=str(e))
