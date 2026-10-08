@@ -3,611 +3,669 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#000000">
 <title>AL CIELO | May Roga LLC</title>
-<meta name="description" content="AL CIELO. Un momento para ti.">
+<meta name="description" content="AL CIELO de May Roga LLC. Un momento sencillo para respirar, descansar y continuar a tu propio ritmo.">
 <style>
 *{box-sizing:border-box}
-html,body{margin:0;padding:0;background:#000;color:#fff;font-family:Arial,Helvetica,sans-serif;min-height:100%;-webkit-text-size-adjust:100%}
+html,body{margin:0;padding:0;background:#000;color:#fff;font-family:Arial,Helvetica,sans-serif}
 body{min-height:100vh}
 button,input{font:inherit}
 button{cursor:pointer}
-#app{width:100%;max-width:900px;margin:0 auto;padding:18px 18px 50px}
-header{text-align:center;padding:14px 0 20px}
-.logo{font-size:clamp(36px,8vw,68px);font-weight:900;letter-spacing:2px;margin:0}
-.sub{font-size:clamp(18px,4vw,25px);margin:10px 0 0;color:#ddd}
-.langs{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin:20px 0}
-.langs button{background:#111;color:#fff;border:2px solid #777;border-radius:12px;padding:12px 18px;font-size:19px;font-weight:700}
-.langs button.active{background:#fff;color:#000;border-color:#fff}
+#app{width:100%;max-width:850px;margin:auto;padding:18px}
+header{text-align:center;padding:8px 0 18px}
+h1{font-size:clamp(34px,7vw,58px);margin:8px 0;font-weight:800}
+h2{font-size:clamp(26px,5vw,40px);margin:10px 0}
+h3{font-size:clamp(22px,4vw,30px);margin:8px 0}
+p{font-size:clamp(20px,4vw,27px);line-height:1.55}
+.small{font-size:17px;line-height:1.5}
 .screen{display:none}
 .screen.active{display:block}
-.panel{border:2px solid #555;border-radius:18px;padding:22px;margin:16px 0;background:#050505}
-h1,h2,h3{margin-top:0}
-h1{font-size:clamp(30px,6vw,48px);line-height:1.15}
-h2{font-size:clamp(27px,5vw,40px);line-height:1.2}
-p{font-size:clamp(20px,4vw,28px);line-height:1.55}
-.small{font-size:18px;line-height:1.5;color:#ccc}
-.big{font-size:clamp(24px,5vw,34px);line-height:1.5}
-.actions{display:flex;flex-direction:column;gap:14px;margin-top:22px}
-.btn{width:100%;min-height:64px;border:2px solid #fff;border-radius:14px;background:#fff;color:#000;padding:14px 18px;font-size:clamp(21px,4vw,28px);font-weight:800}
-.btn.secondary{background:#000;color:#fff;border-color:#aaa}
-.btn:disabled{opacity:.45;cursor:not-allowed}
-.status{text-align:center;font-size:19px;min-height:28px;margin:14px 0;color:#ddd}
+.langs{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:10px 0 22px}
+.langs button,.primary,.secondary,.danger{
+border:2px solid #fff;background:#000;color:#fff;border-radius:12px;
+padding:15px 20px;min-height:54px;font-weight:700
+}
+.langs button.active,.primary{background:#fff;color:#000}
+.primary{width:100%;font-size:22px;margin:10px 0}
+.secondary{width:100%;font-size:20px;margin:8px 0}
+.danger{width:100%;font-size:19px;margin:8px 0}
+button:disabled{opacity:.45;cursor:not-allowed}
+.actions{margin-top:22px}
+.status{text-align:center;min-height:30px;font-size:18px;margin:12px 0}
+.notice{font-size:18px;line-height:1.5;margin:14px 0}
+#exerciseTitle{text-align:center}
+#exerciseInstruction{
+font-size:clamp(23px,4.8vw,32px);
+line-height:1.65;
+text-align:left;
+margin:25px 0;
+min-height:180px
+}
+#gap{
+text-align:center;
+font-size:20px;
+font-weight:700;
+min-height:32px;
+margin:8px 0
+}
+#progress{
+text-align:center;
+font-size:18px;
+margin:8px 0 18px
+}
 .hidden{display:none!important}
-#exerciseTitle{font-size:clamp(30px,6vw,46px);line-height:1.2;margin-bottom:18px}
-#exerciseText{font-size:clamp(25px,5vw,34px);line-height:1.6;margin:0}
-#timer{font-size:clamp(28px,6vw,44px);font-weight:900;text-align:center;margin:18px 0}
-.progressWrap{height:16px;border:2px solid #777;border-radius:10px;overflow:hidden;margin:18px 0}
-#progress{height:100%;width:0;background:#fff;transition:width .2s linear}
-#speechState{text-align:center;font-size:20px;color:#ddd;min-height:30px}
-#nextArea{margin-top:22px}
-.notice{border:2px solid #777;border-radius:14px;padding:16px;margin-top:18px}
-.notice p{font-size:19px;margin:0;line-height:1.5}
-.form{display:flex;flex-direction:column;gap:12px}
-.form input{width:100%;background:#111;color:#fff;border:2px solid #777;border-radius:12px;padding:16px;font-size:22px}
-.center{text-align:center}
-#paymentBox{margin-top:20px}
-#accessStatus{font-size:20px;text-align:center;min-height:30px}
-.footer{text-align:center;margin-top:40px;color:#aaa;font-size:16px;line-height:1.5}
-.spinner{width:34px;height:34px;border:4px solid #555;border-top-color:#fff;border-radius:50%;animation:spin 1s linear infinite;margin:18px auto}
-@keyframes spin{to{transform:rotate(360deg)}}
-@media(max-width:600px){
-#app{padding:10px 12px 35px}
-.panel{padding:18px 15px}
-.btn{min-height:62px}
+a{color:#fff}
+input{
+width:100%;
+background:#000;color:#fff;border:2px solid #fff;border-radius:10px;
+padding:16px;margin:7px 0;outline:none
+}
+footer{text-align:center;margin:35px 0 15px}
+@media(max-width:500px){
+#app{padding:12px}
+.langs button{flex:1;min-width:90px}
 }
 </style>
 </head>
 <body>
 <div id="app">
+
 <header>
-<div class="logo">AL CIELO</div>
-<div class="sub" id="subtitle">Un momento para ti</div>
+<h1>AL CIELO</h1>
 <div class="langs">
-<button id="esBtn" class="active" onclick="changeLanguage('es')">ESPAÑOL</button>
-<button id="enBtn" onclick="changeLanguage('en')">ENGLISH</button>
-<button id="ptBtn" onclick="changeLanguage('pt')">PORTUGUÊS</button>
+<button id="langES" onclick="changeLanguage('es')">ESPAÑOL</button>
+<button id="langEN" onclick="changeLanguage('en')">ENGLISH</button>
+<button id="langPT" onclick="changeLanguage('pt')">PORTUGUÊS</button>
 </div>
 </header>
 
 <section id="homeScreen" class="screen active">
-<div class="panel center">
-<h1 id="homeTitle">Un momento para ti</h1>
-<p id="homeText">Puedes comenzar cuando estés listo. La voz te acompañará paso a paso.</p>
+<h2 id="homeTitle"></h2>
+<p id="homeText"></p>
 <div class="actions">
-<button class="btn" id="startBtn" onclick="startSession()">COMENZAR</button>
-<button class="btn secondary" id="paymentBtn" onclick="startPayment()">ACTIVAR ACCESO</button>
+<button class="primary" id="startButton" onclick="startSession()"></button>
+<button class="secondary" id="paymentButton" onclick="startPayment()"></button>
+<button class="secondary" id="adminButton" onclick="showAdmin()"></button>
 </div>
-<div id="accessStatus"></div>
-</div>
-
-<div class="panel">
-<h2 id="aboutTitle">AL CIELO</h2>
-<p id="aboutText">Un espacio sencillo para dedicar unos minutos a ti. Puedes hacerlo sentado, recostado o en una posición cómoda.</p>
-<div class="notice">
-<p id="legalText">AL CIELO es un servicio de bienestar y acompañamiento general. No es un servicio médico, clínico ni de tratamiento.</p>
-</div>
-</div>
-
-<div class="panel">
-<h2 id="adminTitle">Acceso autorizado</h2>
-<p class="small" id="adminText">Si tienes un acceso administrativo autorizado, puedes activarlo aquí.</p>
-<div class="form">
-<input id="adminUser" autocomplete="username" placeholder="Usuario">
-<input id="adminPass" type="password" autocomplete="current-password" placeholder="Contraseña">
-<button class="btn secondary" onclick="courtesyLogin()" id="adminBtn">ENTRAR</button>
-</div>
-</div>
+<p id="accessStatus" class="status"></p>
+<p id="homeNotice" class="notice"></p>
 </section>
 
-<section id="loadingScreen" class="screen">
-<div class="panel center">
-<h2 id="loadingTitle">Preparando tu momento</h2>
-<div class="spinner"></div>
-<p id="loadingText">Espera un momento.</p>
-</div>
+<section id="adminScreen" class="screen">
+<h2 id="adminTitle"></h2>
+<p id="adminText"></p>
+<input id="adminUser" autocomplete="username">
+<input id="adminPass" type="password" autocomplete="current-password">
+<button class="primary" onclick="authorizeCourtesy()" id="adminLoginButton"></button>
+<button class="secondary" onclick="showHome()" id="adminBackButton"></button>
+<p id="adminStatus" class="status"></p>
 </section>
 
-<section id="exerciseScreen" class="screen">
-<div class="panel">
-<div class="small center" id="exerciseCounter">1 / 8</div>
-<div class="progressWrap"><div id="progress"></div></div>
-<h2 id="exerciseTitle">Comenzar</h2>
-<p id="exerciseText"></p>
-<div id="speechState"></div>
-<div id="timer"></div>
-<div id="nextArea" class="hidden">
+<section id="sessionScreen" class="screen">
+<div id="progress"></div>
+<h2 id="sessionTitle"></h2>
+<h3 id="exerciseTitle"></h3>
+<p id="exerciseInstruction"></p>
+<div id="gap"></div>
 <div class="actions">
-<button class="btn" id="nextBtn" onclick="nextExercise()">CONTINUAR</button>
-<button class="btn secondary" id="repeatBtn" onclick="repeatExercise()">VOLVER A ESCUCHAR</button>
-</div>
-</div>
-</div>
-</section>
-
-<section id="finishedScreen" class="screen">
-<div class="panel center">
-<h1 id="finishedTitle">Terminaste</h1>
-<p id="finishedText">Has completado este momento. Puedes continuar con tu día a tu propio ritmo.</p>
-<div class="actions">
-<button class="btn" onclick="startSession()" id="againBtn">OTRO MOMENTO</button>
-<button class="btn secondary" onclick="goHome()" id="homeBtn">VOLVER</button>
-</div>
+<button class="primary hidden" id="continueButton" onclick="nextExercise()"></button>
+<button class="secondary hidden" id="repeatButton" onclick="repeatExercise()"></button>
+<button class="secondary" id="stopButton" onclick="stopAndGoHome()"></button>
 </div>
 </section>
 
-<footer class="footer">
-<div>May Roga LLC</div>
-<div>AL CIELO</div>
+<footer>
+<p class="small">May Roga LLC</p>
+<p class="small" id="legal"></p>
 </footer>
+
 </div>
 
 <script>
-const BASE_URL="https://al-cielo.onrender.com";
 const API_BASE="";
-const synth=window.speechSynthesis;
-let voices=[];
-let language=localStorage.getItem("alCieloLanguage")||"es";
-let deviceId=localStorage.getItem("alCieloDeviceId");
-let session=null;
-let exercises=[];
-let exerciseIndex=0;
-let currentInstruction="";
-let speechToken=0;
-let gapTimer=null;
-let progressTimer=null;
-let sessionBusy=false;
-let gapSeconds=6;
+const BASE_URL="https://al-cielo.onrender.com";
+const DEVICE_KEY="al_cielo_device_id";
+const LANGUAGE_KEY="al_cielo_language";
 
-const T={
+const TEXT={
 es:{
-subtitle:"Un momento para ti",
 homeTitle:"Un momento para ti",
-homeText:"Puedes comenzar cuando estés listo. La voz te acompañará paso a paso.",
+homeText:"Siéntate, descansa o permanece acostado cómodamente. Cuando estés listo, comienza.",
 start:"COMENZAR",
-payment:"ACTIVAR ACCESO",
-aboutTitle:"AL CIELO",
-aboutText:"Un espacio sencillo para dedicar unos minutos a ti. Puedes hacerlo sentado, recostado o en una posición cómoda.",
-legal:"AL CIELO es un servicio de bienestar y acompañamiento general. No es un servicio médico, clínico ni de tratamiento.",
-adminTitle:"Acceso autorizado",
-adminText:"Si tienes un acceso administrativo autorizado, puedes activarlo aquí.",
-admin:"ENTRAR",
-loadingTitle:"Preparando tu momento",
-loadingText:"Espera un momento.",
-speech:"La voz está leyendo.",
-waiting:"Terminó el párrafo. Espera un momento antes de continuar.",
+payment:"OBTENER ACCESO",
+admin:"ACCESO ADMINISTRATIVO",
+back:"VOLVER",
+login:"ENTRAR",
+stop:"SALIR",
 continue:"CONTINUAR",
 repeat:"VOLVER A ESCUCHAR",
-finished:"Terminaste",
-finishedText:"Has completado este momento. Puedes continuar con tu día a tu propio ritmo.",
-again:"OTRO MOMENTO",
-home:"VOLVER",
-ready:"Tu acceso está activo.",
-paymentStarting:"Abriendo Stripe...",
-paymentError:"No se pudo abrir el pago.",
-loginOk:"Acceso autorizado.",
-loginError:"No se pudo autorizar el acceso.",
-sessionError:"No se pudo preparar la sesión.",
-noSpeech:"La lectura por voz no está disponible en este dispositivo.",
-waitingSeconds:"Siguiente parte en",
-seconds:"segundos"
+adminTitle:"Acceso administrativo",
+adminText:"Introduce los datos de acceso.",
+user:"Usuario",
+pass:"Contraseña",
+checking:"Comprobando acceso...",
+authorized:"Acceso disponible.",
+required:"Se requiere acceso para comenzar.",
+paymentStarting:"Abriendo el acceso...",
+paymentError:"No se pudo abrir el pago. Inténtalo nuevamente.",
+adminSuccess:"Acceso autorizado.",
+adminError:"Los datos no son correctos.",
+loading:"Preparando tu sesión...",
+error:"No se pudo preparar la sesión. Inténtalo nuevamente.",
+speech:"Preparando la lectura...",
+gap:"Espera ",
+seconds:" segundos",
+legal:"AL CIELO no sustituye servicios profesionales. Su contenido es una experiencia general de descanso y bienestar."
 },
 en:{
-subtitle:"A moment for you",
 homeTitle:"A moment for you",
-homeText:"Begin when you are ready. The voice will guide you step by step.",
+homeText:"Sit, rest, or remain comfortably lying down. When you are ready, begin.",
 start:"START",
-payment:"ACTIVATE ACCESS",
-aboutTitle:"AL CIELO",
-aboutText:"A simple space to spend a few minutes with yourself. You can do it seated, resting, or in a comfortable position.",
-legal:"AL CIELO is a general wellness and accompaniment service. It is not a medical, clinical, or treatment service.",
-adminTitle:"Authorized access",
-adminText:"If you have authorized administrative access, you can activate it here.",
-admin:"ENTER",
-loadingTitle:"Preparing your moment",
-loadingText:"Please wait.",
-speech:"The voice is reading.",
-waiting:"The paragraph has finished. Wait a moment before continuing.",
+payment:"GET ACCESS",
+admin:"ADMIN ACCESS",
+back:"BACK",
+login:"SIGN IN",
+stop:"EXIT",
 continue:"CONTINUE",
 repeat:"LISTEN AGAIN",
-finished:"You finished",
-finishedText:"You completed this moment. Continue with your day at your own pace.",
-again:"ANOTHER MOMENT",
-home:"BACK",
-ready:"Your access is active.",
-paymentStarting:"Opening Stripe...",
-paymentError:"The payment could not be opened.",
-loginOk:"Access authorized.",
-loginError:"Access could not be authorized.",
-sessionError:"The session could not be prepared.",
-noSpeech:"Voice reading is not available on this device.",
-waitingSeconds:"Next part in",
-seconds:"seconds"
+adminTitle:"Administrative access",
+adminText:"Enter the access information.",
+user:"Username",
+pass:"Password",
+checking:"Checking access...",
+authorized:"Access available.",
+required:"Access is required to begin.",
+paymentStarting:"Opening access...",
+paymentError:"The payment page could not be opened. Please try again.",
+adminSuccess:"Access authorized.",
+adminError:"The information is not correct.",
+loading:"Preparing your session...",
+error:"The session could not be prepared. Please try again.",
+speech:"Preparing the reading...",
+gap:"Wait ",
+seconds:" seconds",
+legal:"AL CIELO does not replace professional services. Its content is a general rest and wellness experience."
 },
 pt:{
-subtitle:"Um momento para você",
 homeTitle:"Um momento para você",
-homeText:"Comece quando estiver pronto. A voz acompanhará você passo a passo.",
+homeText:"Sente-se, descanse ou permaneça deitado confortavelmente. Quando estiver pronto, comece.",
 start:"COMEÇAR",
-payment:"ATIVAR ACESSO",
-aboutTitle:"AL CIELO",
-aboutText:"Um espaço simples para dedicar alguns minutos a você. Você pode fazer sentado, descansando ou em uma posição confortável.",
-legal:"AL CIELO é um serviço geral de bem-estar e acompanhamento. Não é um serviço médico, clínico ou de tratamento.",
-adminTitle:"Acesso autorizado",
-adminText:"Se você possui acesso administrativo autorizado, pode ativá-lo aqui.",
-admin:"ENTRAR",
-loadingTitle:"Preparando seu momento",
-loadingText:"Aguarde um momento.",
-speech:"A voz está lendo.",
-waiting:"O parágrafo terminou. Aguarde um momento antes de continuar.",
+payment:"OBTER ACESSO",
+admin:"ACESSO ADMINISTRATIVO",
+back:"VOLTAR",
+login:"ENTRAR",
+stop:"SAIR",
 continue:"CONTINUAR",
 repeat:"OUVIR NOVAMENTE",
-finished:"Você terminou",
-finishedText:"Você completou este momento. Continue seu dia no seu próprio ritmo.",
-again:"OUTRO MOMENTO",
-home:"VOLTAR",
-ready:"Seu acesso está ativo.",
-paymentStarting:"Abrindo Stripe...",
-paymentError:"Não foi possível abrir o pagamento.",
-loginOk:"Acesso autorizado.",
-loginError:"Não foi possível autorizar o acesso.",
-sessionError:"Não foi possível preparar a sessão.",
-noSpeech:"A leitura por voz não está disponível neste dispositivo.",
-waitingSeconds:"Próxima parte em",
-seconds:"segundos"
+adminTitle:"Acesso administrativo",
+adminText:"Digite os dados de acesso.",
+user:"Usuário",
+pass:"Senha",
+checking:"Verificando acesso...",
+authorized:"Acesso disponível.",
+required:"É necessário ter acesso para começar.",
+paymentStarting:"Abrindo o acesso...",
+paymentError:"Não foi possível abrir o pagamento. Tente novamente.",
+adminSuccess:"Acesso autorizado.",
+adminError:"Os dados não estão corretos.",
+loading:"Preparando sua sessão...",
+error:"Não foi possível preparar a sessão. Tente novamente.",
+speech:"Preparando a leitura...",
+gap:"Aguarde ",
+seconds:" segundos",
+legal:"AL CIELO não substitui serviços profissionais. Seu conteúdo é uma experiência geral de descanso e bem-estar."
 }
 };
 
+let language=localStorage.getItem(LANGUAGE_KEY)||"es";
+let deviceId=localStorage.getItem(DEVICE_KEY);
+let authorized=false;
+let session=null;
+let exerciseIndex=0;
+let speaking=false;
+let gapTimer=null;
+let speechToken=0;
+let voicesLoaded=false;
+
 function makeDeviceId(){
-if(deviceId)return deviceId;
-try{
-if(window.crypto&&crypto.randomUUID)deviceId=crypto.randomUUID();
-else deviceId="alcielo-"+Date.now()+"-"+Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);
-}catch(e){
-deviceId="alcielo-"+Date.now()+"-"+Math.random().toString(36).slice(2);
-}
-localStorage.setItem("alCieloDeviceId",deviceId);
-return deviceId;
+return "alcielo_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,12);
 }
 
-function qs(id){return document.getElementById(id)}
+if(!deviceId){
+deviceId=makeDeviceId();
+localStorage.setItem(DEVICE_KEY,deviceId);
+}
 
-function showScreen(id){
+function T(key){
+return TEXT[language][key]||TEXT.es[key]||key;
+}
+
+function el(id){
+return document.getElementById(id);
+}
+
+function show(id){
 document.querySelectorAll(".screen").forEach(x=>x.classList.remove("active"));
-qs(id).classList.add("active");
-window.scrollTo({top:0,behavior:"instant"});
+el(id).classList.add("active");
 }
 
-function setText(){
-const t=T[language]||T.es;
-document.documentElement.lang=language==="pt"?"pt-BR":language;
-qs("subtitle").textContent=t.subtitle;
-qs("homeTitle").textContent=t.homeTitle;
-qs("homeText").textContent=t.homeText;
-qs("startBtn").textContent=t.start;
-qs("paymentBtn").textContent=t.payment;
-qs("aboutTitle").textContent=t.aboutTitle;
-qs("aboutText").textContent=t.aboutText;
-qs("legalText").textContent=t.legal;
-qs("adminTitle").textContent=t.adminTitle;
-qs("adminText").textContent=t.adminText;
-qs("adminBtn").textContent=t.admin;
-qs("loadingTitle").textContent=t.loadingTitle;
-qs("loadingText").textContent=t.loadingText;
-qs("nextBtn").textContent=t.continue;
-qs("repeatBtn").textContent=t.repeat;
-qs("finishedTitle").textContent=t.finished;
-qs("finishedText").textContent=t.finishedText;
-qs("againBtn").textContent=t.again;
-qs("homeBtn").textContent=t.home;
-qs("esBtn").classList.toggle("active",language==="es");
-qs("enBtn").classList.toggle("active",language==="en");
-qs("ptBtn").classList.toggle("active",language==="pt");
+function updateLanguageButtons(){
+["es","en","pt"].forEach(x=>{
+const b=el("lang"+x.toUpperCase());
+if(b)b.classList.toggle("active",x===language);
+});
 }
 
-function changeLanguage(lang){
-if(lang===language)return;
+function applyLanguage(){
+document.documentElement.lang=language;
+updateLanguageButtons();
+
+el("homeTitle").textContent=T("homeTitle");
+el("homeText").textContent=T("homeText");
+el("startButton").textContent=T("start");
+el("paymentButton").textContent=T("payment");
+el("adminButton").textContent=T("admin");
+el("homeNotice").textContent=T("legal");
+
+el("adminTitle").textContent=T("adminTitle");
+el("adminText").textContent=T("adminText");
+el("adminUser").placeholder=T("user");
+el("adminPass").placeholder=T("pass");
+el("adminLoginButton").textContent=T("login");
+el("adminBackButton").textContent=T("back");
+
+el("continueButton").textContent=T("continue");
+el("repeatButton").textContent=T("repeat");
+el("stopButton").textContent=T("stop");
+el("legal").textContent=T("legal");
+}
+
+function changeLanguage(newLanguage){
+if(!TEXT[newLanguage])return;
+
 stopSpeech();
-clearTimers();
-language=lang;
-localStorage.setItem("alCieloLanguage",language);
+clearGap();
+
+language=newLanguage;
+localStorage.setItem(LANGUAGE_KEY,language);
+
 session=null;
-exercises=[];
 exerciseIndex=0;
-currentInstruction="";
-sessionBusy=false;
-setText();
-showScreen("homeScreen");
+
+applyLanguage();
+show("homeScreen");
 checkAccess();
 }
 
-function clearTimers(){
-if(gapTimer){clearInterval(gapTimer);gapTimer=null}
-if(progressTimer){clearInterval(progressTimer);progressTimer=null}
+function clearGap(){
+if(gapTimer){
+clearInterval(gapTimer);
+gapTimer=null;
+}
+el("gap").textContent="";
 }
 
 function stopSpeech(){
 speechToken++;
-if(synth){
-try{synth.cancel()}catch(e){}
+speaking=false;
+
+try{
+window.speechSynthesis.cancel();
+}catch(e){}
+
+clearGap();
+
+if(el("continueButton")){
+el("continueButton").classList.add("hidden");
 }
-clearTimers();
+
+if(el("repeatButton")){
+el("repeatButton").classList.add("hidden");
+}
 }
 
 function loadVoices(){
-if(!synth)return;
-voices=synth.getVoices()||[];
+try{
+window.speechSynthesis.getVoices();
+voicesLoaded=true;
+}catch(e){}
 }
 
-if(synth){
+if("speechSynthesis" in window){
+window.speechSynthesis.onvoiceschanged=loadVoices;
 loadVoices();
-if("onvoiceschanged" in synth)synth.addEventListener("voiceschanged",loadVoices);
 }
 
 function voiceForLanguage(lang){
-const wanted=lang==="es"?["es-ES","es-US","es-MX","es"]:lang==="en"?["en-US","en-GB","en-AU","en"]:["pt-BR","pt-PT","pt"];
+const voices=window.speechSynthesis.getVoices();
+
+const wanted={
+es:["es-ES","es-MX","es-US"],
+en:["en-US","en-GB"],
+pt:["pt-BR","pt-PT"]
+}[lang]||[];
+
 for(const code of wanted){
-const exact=voices.find(v=>(v.lang||"").toLowerCase()===code.toLowerCase());
+const exact=voices.find(v=>v.lang===code);
 if(exact)return exact;
 }
+
 for(const code of wanted){
-const partial=voices.find(v=>(v.lang||"").toLowerCase().startsWith(code.slice(0,2).toLowerCase()));
+const partial=voices.find(v=>v.lang&&v.lang.toLowerCase().startsWith(code.slice(0,2).toLowerCase()));
 if(partial)return partial;
 }
+
 return null;
 }
 
-function speakInstruction(text){
-return new Promise(resolve=>{
-if(!synth){
-qs("speechState").textContent=T[language].noSpeech;
-resolve(false);
-return;
-}
-const token=++speechToken;
-try{synth.cancel()}catch(e){}
-clearTimers();
-currentInstruction=String(text||"").trim();
-if(!currentInstruction){
-resolve(false);
-return;
-}
-const u=new SpeechSynthesisUtterance(currentInstruction);
-u.lang=language==="es"?"es-US":language==="en"?"en-US":"pt-BR";
-u.rate=0.92;
-u.pitch=1;
-u.volume=1;
-const v=voiceForLanguage(language);
-if(v)u.voice=v;
-qs("speechState").textContent=T[language].speech;
-qs("timer").textContent="";
-u.onend=()=>{
+function startGap(token){
 if(token!==speechToken)return;
-qs("speechState").textContent=T[language].waiting;
-startGap(resolve,token);
-};
-u.onerror=()=>{
-if(token!==speechToken)return;
-qs("speechState").textContent=T[language].waiting;
-startGap(resolve,token);
-};
-try{
-synth.speak(u);
-}catch(e){
-startGap(resolve,token);
-}
-});
-}
 
-function startGap(resolve,token){
-if(token!==speechToken)return;
-clearTimers();
-let left=gapSeconds;
-qs("timer").textContent=T[language].waitingSeconds+" "+left+" "+T[language].seconds;
+clearGap();
+
+let remaining=6;
+el("gap").textContent=T("gap")+remaining+T("seconds");
+
 gapTimer=setInterval(()=>{
 if(token!==speechToken){
-clearTimers();
+clearGap();
 return;
 }
-left--;
-if(left<=0){
-clearTimers();
-qs("timer").textContent="";
-qs("speechState").textContent="";
-qs("nextArea").classList.remove("hidden");
-resolve(true);
+
+remaining--;
+
+if(remaining<=0){
+clearGap();
+speaking=false;
+
+el("continueButton").classList.remove("hidden");
+el("repeatButton").classList.remove("hidden");
 return;
 }
-qs("timer").textContent=T[language].waitingSeconds+" "+left+" "+T[language].seconds;
+
+el("gap").textContent=T("gap")+remaining+T("seconds");
 },1000);
 }
 
-async function startSession(){
-if(sessionBusy)return;
-sessionBusy=true;
+function speakInstruction(text){
 stopSpeech();
-qs("nextArea").classList.add("hidden");
-showScreen("loadingScreen");
-try{
-const r=await fetch(API_BASE+"/api/v1/generate-session",{
-method:"POST",
-headers:{"Content-Type":"application/json"},
-cache:"no-store",
-body:JSON.stringify({
-device_id:makeDeviceId(),
-language,
-is_hook:false
-})
-});
-const data=await r.json().catch(()=>({}));
-if(r.status===402||data.status==="payment_required"){
-sessionBusy=false;
-showScreen("homeScreen");
-qs("accessStatus").textContent=T[language].payment;
+
+if(!text){
+el("continueButton").classList.remove("hidden");
 return;
 }
-if(!r.ok||data.status!=="success"){
-throw new Error(data.message||"session");
+
+if(!("speechSynthesis" in window)){
+speaking=false;
+startGap(speechToken);
+return;
 }
-session=data.session;
-if(!session||!Array.isArray(session.exercises)||session.exercises.length<1){
-throw new Error("empty");
+
+const token=speechToken;
+const utterance=new SpeechSynthesisUtterance(text);
+const voice=voiceForLanguage(language);
+
+if(voice){
+utterance.voice=voice;
+utterance.lang=voice.lang;
+}else{
+utterance.lang={
+es:"es-ES",
+en:"en-US",
+pt:"pt-BR"
+}[language];
 }
-exercises=session.exercises.filter(x=>x&&String(x.instruction||"").trim());
-if(!exercises.length)throw new Error("empty");
-exerciseIndex=0;
-sessionBusy=false;
-showScreen("exerciseScreen");
-renderExercise();
+
+utterance.rate=0.92;
+utterance.pitch=1;
+utterance.volume=1;
+
+speaking=true;
+
+utterance.onstart=()=>{
+if(token!==speechToken)return;
+speaking=true;
+};
+
+utterance.onend=()=>{
+if(token!==speechToken)return;
+
+speaking=false;
+
+el("gap").textContent="";
+startGap(token);
+};
+
+utterance.onerror=()=>{
+if(token!==speechToken)return;
+
+speaking=false;
+
+startGap(token);
+};
+
+try{
+window.speechSynthesis.speak(utterance);
 }catch(e){
-sessionBusy=false;
-showScreen("homeScreen");
-qs("accessStatus").textContent=T[language].sessionError;
+speaking=false;
+startGap(token);
 }
 }
 
 function renderExercise(){
+if(!session||!session.exercises||!session.exercises.length)return;
+
 stopSpeech();
-if(exerciseIndex>=exercises.length){
-finishSession();
-return;
-}
-const ex=exercises[exerciseIndex];
-const instruction=String(ex.instruction||"").trim();
-const title=String(ex.title||"").trim();
-qs("exerciseCounter").textContent=(exerciseIndex+1)+" / "+exercises.length;
-qs("exerciseTitle").textContent=title;
-qs("exerciseText").textContent=instruction;
-qs("progress").style.width=((exerciseIndex)/Math.max(1,exercises.length))*100+"%";
-qs("nextArea").classList.add("hidden");
-qs("timer").textContent="";
-qs("speechState").textContent="";
-currentInstruction=instruction;
+
+const item=session.exercises[exerciseIndex];
+
+el("sessionTitle").textContent=session.title||"AL CIELO";
+el("exerciseTitle").textContent=item.title||("Parte "+(exerciseIndex+1));
+el("exerciseInstruction").textContent=item.instruction||"";
+
+el("progress").textContent=
+(exerciseIndex+1)+" / "+session.exercises.length;
+
+el("continueButton").classList.add("hidden");
+el("repeatButton").classList.add("hidden");
+el("gap").textContent=T("speech");
+
 setTimeout(()=>{
-if(exerciseIndex<exercises.length) speakInstruction(instruction);
+if(session&&exerciseIndex<session.exercises.length){
+speakInstruction(item.instruction||"");
+}
 },250);
 }
 
 function nextExercise(){
-if(!currentInstruction)return;
-if(synth&&synth.speaking){
-try{synth.cancel()}catch(e){}
+if(speaking)return;
+
+if(!session)return;
+
+if(exerciseIndex>=session.exercises.length-1){
+stopSpeech();
+show("homeScreen");
+session=null;
+exerciseIndex=0;
+checkAccess();
 return;
 }
-stopSpeech();
+
 exerciseIndex++;
 renderExercise();
 }
 
 function repeatExercise(){
-if(!currentInstruction)return;
-stopSpeech();
-qs("nextArea").classList.add("hidden");
-qs("timer").textContent="";
-setTimeout(()=>speakInstruction(currentInstruction),150);
+if(!session)return;
+renderExercise();
 }
 
-function finishSession(){
-stopSpeech();
-qs("progress").style.width="100%";
-showScreen("finishedScreen");
-}
-
-function goHome(){
+function stopAndGoHome(){
 stopSpeech();
 session=null;
-exercises=[];
 exerciseIndex=0;
-currentInstruction="";
-setText();
-showScreen("homeScreen");
+show("homeScreen");
 checkAccess();
 }
 
-async function startPayment(){
+async function checkAccess(){
+el("accessStatus").textContent=T("checking");
+
+try{
+const r=await fetch(
+API_BASE+"/api/v1/access-status?device_id="+encodeURIComponent(deviceId),
+{cache:"no-store"}
+);
+
+const data=await r.json();
+authorized=!!data.authorized;
+
+el("accessStatus").textContent=
+authorized?T("authorized"):T("required");
+
+el("startButton").disabled=!authorized;
+}catch(e){
+authorized=false;
+el("accessStatus").textContent=T("required");
+el("startButton").disabled=true;
+}
+}
+
+async function startSession(){
+if(!authorized){
+el("accessStatus").textContent=T("required");
+return;
+}
+
 stopSpeech();
-const t=T[language];
-qs("accessStatus").textContent=t.paymentStarting;
+clearGap();
+
+el("accessStatus").textContent=T("loading");
+
+try{
+const r=await fetch(API_BASE+"/api/v1/generate-session",{
+method:"POST",
+headers:{"Content-Type":"application/json"},
+body:JSON.stringify({
+device_id:deviceId,
+language:language,
+is_hook:false
+})
+});
+
+const data=await r.json();
+
+if(!r.ok||!data.session){
+throw new Error(data.message||"session");
+}
+
+session=data.session;
+
+if(!session.exercises||!session.exercises.length){
+throw new Error("empty");
+}
+
+exerciseIndex=0;
+show("sessionScreen");
+renderExercise();
+
+}catch(e){
+el("accessStatus").textContent=T("error");
+}
+}
+
+async function startPayment(){
+el("accessStatus").textContent=T("paymentStarting");
+
 try{
 const r=await fetch(API_BASE+"/api/v1/create-checkout-session",{
 method:"POST",
 headers:{"Content-Type":"application/json"},
-cache:"no-store",
-body:JSON.stringify({device_id:makeDeviceId()})
+body:JSON.stringify({
+device_id:deviceId
+})
 });
-const data=await r.json().catch(()=>({}));
+
+const data=await r.json();
+
 if(!r.ok||!data.checkout_url){
 throw new Error(data.message||"stripe");
 }
-window.location.assign(data.checkout_url);
+
+window.location.href=data.checkout_url;
+
 }catch(e){
-qs("accessStatus").textContent=t.paymentError;
+el("accessStatus").textContent=T("paymentError");
 }
 }
 
-async function checkAccess(){
-const id=makeDeviceId();
-try{
-const r=await fetch(API_BASE+"/api/v1/access-status?device_id="+encodeURIComponent(id),{
-cache:"no-store"
-});
-const data=await r.json().catch(()=>({}));
-if(data.authorized){
-qs("accessStatus").textContent=T[language].ready;
-qs("paymentBtn").classList.add("hidden");
-}else{
-qs("accessStatus").textContent="";
-qs("paymentBtn").classList.remove("hidden");
-}
-}catch(e){
-qs("paymentBtn").classList.remove("hidden");
-}
+function showAdmin(){
+stopSpeech();
+clearGap();
+show("adminScreen");
+el("adminStatus").textContent="";
+el("adminUser").focus();
 }
 
-async function courtesyLogin(){
-const t=T[language];
-const username=qs("adminUser").value.trim();
-const password=qs("adminPass").value;
-if(!username||!password){
-qs("accessStatus").textContent=t.loginError;
-return;
+function showHome(){
+stopSpeech();
+clearGap();
+show("homeScreen");
 }
-qs("accessStatus").textContent="...";
+
+async function authorizeCourtesy(){
+const username=el("adminUser").value.trim();
+const password=el("adminPass").value;
+
+el("adminStatus").textContent=T("checking");
+
 try{
 const r=await fetch(API_BASE+"/api/v1/authorize-courtesy",{
 method:"POST",
 headers:{"Content-Type":"application/json"},
-cache:"no-store",
 body:JSON.stringify({
-device_id:makeDeviceId(),
 username,
-password
+password,
+device_id:deviceId
 })
 });
-const data=await r.json().catch(()=>({}));
-if(!r.ok||data.status!=="success")throw new Error("login");
-qs("accessStatus").textContent=t.loginOk;
-qs("adminPass").value="";
-qs("paymentBtn").classList.add("hidden");
+
+const data=await r.json();
+
+if(!r.ok||!data.authorized){
+throw new Error(data.message||"login");
+}
+
+authorized=true;
+el("adminStatus").textContent=T("adminSuccess");
+
+setTimeout(()=>{
+show("homeScreen");
+checkAccess();
+},500);
+
 }catch(e){
-qs("accessStatus").textContent=t.loginError;
+el("adminStatus").textContent=T("adminError");
 }
 }
 
-function handleReturnFromStripe(){
+function handleStripeReturn(){
 const params=new URLSearchParams(window.location.search);
-if(!params.has("session_id"))return;
-const returnedDevice=params.get("device_id");
-if(returnedDevice){
-deviceId=returnedDevice;
-localStorage.setItem("alCieloDeviceId",deviceId);
+const sid=params.get("session_id");
+const did=params.get("device_id");
+
+if(did){
+deviceId=did;
+localStorage.setItem(DEVICE_KEY,deviceId);
 }
+
+if(sid){
 window.history.replaceState({},document.title,"/");
 }
+}
 
-setText();
-makeDeviceId();
-handleReturnFromStripe();
+applyLanguage();
+handleStripeReturn();
 checkAccess();
 </script>
 </body>
